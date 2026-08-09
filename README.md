@@ -5,30 +5,32 @@ A highly scalable, production-ready file and media management package for Larave
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/mohamedsamy902/laravel-media-vault.svg?style=flat-square)](https://packagist.org/packages/mohamedsamy902/laravel-media-vault)
 [![PHP Version Require](https://img.shields.io/badge/PHP-%5E8.2-blue.svg)](https://php.net)
 [![Laravel Version Require](https://img.shields.io/badge/Laravel-%3E%3D10.0-red.svg)](https://laravel.com)
+[![PHPStan Level](https://img.shields.io/badge/PHPStan-Level%206-brightgreen.svg)](https://phpstan.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
-[![Tests](https://img.shields.io/badge/Tests-177%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/github/actions/workflow/status/MohamedSamy902/laravel-media-vault/tests.yml?branch=main&label=tests)](https://github.com/MohamedSamy902/laravel-media-vault/actions)
 
 ![Laravel Media Vault Dashboard](art/dashboard_preview.png)
 
 
 ## Table of Contents
 1. [Features](#1-features)
-2. [Requirements](#2-requirements)
-3. [Installation](#3-installation)
-4. [Configuration](#4-configuration)
-5. [Usage Examples](#5-usage-examples)
-6. [Response Format](#6-response-format)
-7. [Database Model](#7-database-model)
-8. [Dashboard & Media Manager UI](#8-dashboard--media-manager-ui)
-9. [Cloud Storage Setup](#9-cloud-storage-setup)
-10. [Console Commands](#10-console-commands)
-11. [⚠️ Danger Zone / Known Limitations](#11-️-danger-zone--known-limitations)
-12. [Testing](#12-testing)
-13. [Advanced Security & Performance Features](#13-advanced-security--performance-features)
-14. [Security](#14-security)
-15. [Contributing](#15-contributing)
-16. [Changelog](#16-changelog)
-17. [License](#17-license)
+2. [Why Media Vault?](#2-why-media-vault)
+3. [Requirements](#3-requirements)
+4. [Installation](#4-installation)
+5. [Configuration](#5-configuration)
+6. [Usage Examples](#6-usage-examples)
+7. [Response Format](#7-response-format)
+8. [Database Model](#8-database-model)
+9. [Dashboard & Media Manager UI](#9-dashboard--media-manager-ui)
+10. [Cloud Storage Setup](#10-cloud-storage-setup)
+11. [Console Commands](#11-console-commands)
+12. [⚠️ Danger Zone / Known Limitations](#12-️-danger-zone--known-limitations)
+13. [Testing](#13-testing)
+14. [Advanced Security & Performance Features](#14-advanced-security--performance-features)
+15. [Security](#15-security)
+16. [Contributing](#16-contributing)
+17. [Changelog](#17-changelog)
+18. [License](#18-license)
 
 ---
 
@@ -39,13 +41,24 @@ A highly scalable, production-ready file and media management package for Larave
 - **Storage Integration:** Out-of-the-box support for Local disks, Amazon S3, Google Cloud Storage, and CDN URL rewriting.
 - **Multi-Source Media:** Auto-discovery of custom Eloquent models via the `HasMediaFields` trait alongside the central polymorphic repository (`HasUploads`).
 - **Database Tracking:** Comprehensive file tracking with usage state, polymorphic ownership, and soft deletion.
-- **Dashboard SPA:** Built-in UI to manage files, view statistics, and handle orphans directly.
+- **Dashboard SPA:** Built-in zero-dependency SPA UI (Vanilla JS + PJAX + CSS Tokens) to manage files, view statistics, and handle orphans directly without npm builds.
 - **Bulk Deletion Safety Net:** 2-step verification (Preview → Token → Execute) for mass deletions to prevent catastrophic data loss.
 - **Security & Quotas:** Strict SSRF URL validation, user-level storage quotas, strict MIME binary validation, and SVG entity expansion sanitization.
 
 ---
 
-## 2. Requirements
+## 2. Why Media Vault?
+
+Unlike traditional Laravel media management packages (e.g., Spatie Media Library or standard upload helpers) that load entire files into memory leading to Out-Of-Memory (OOM) crashes on large files:
+
+- ⚡ **Zero-OOM Streaming Engine:** Streams remote and chunked uploads directly to storage with minimal memory footprint (< 10MB) even when handling multi-gigabyte files.
+- 📱 **Multi-Platform Integration Ready:** Built-in execution patterns for **Traditional Blade Forms**, **JS Client** (with automatic state resumption), and **Mobile REST APIs** (Flutter, React Native, Swift, Kotlin).
+- 🖥️ **Zero-Build SPA Media Manager:** Features a standalone SPA Dashboard (Vanilla JS PJAX + CSS Tokens + SweetAlert2) providing zero-reload navigation, live search, and orphan recovery out-of-the-box without npm/Vite compilation.
+- 🛡️ **Production Safety Net:** Includes magic-byte binary verification, SSRF protection, ClamAV antivirus scanning, user storage quotas, and a 2-stage cryptographically signed preview token for mass deletions.itization.
+
+---
+
+## 3. Requirements
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
@@ -55,7 +68,7 @@ A highly scalable, production-ready file and media management package for Larave
 
 ---
 
-## 3. Installation
+## 4. Installation
 
 **1. Install via Composer:**
 ```bash
@@ -74,7 +87,7 @@ php artisan migrate
 
 ---
 
-## 4. Configuration
+## 5. Configuration
 
 This package is highly customizable through `config/media-vault.php`. Below is a comprehensive list of every configuration key available.
 
@@ -176,7 +189,7 @@ Contains standard Laravel validation strings mapped to file types (`image`, `vid
 
 ---
 
-## 5. Usage Examples
+## 6. Usage Examples
 
 ### Single & Multiple File Upload via HTTP Request
 ```php
@@ -399,7 +412,7 @@ use MohamedSamy902\LaravelMediaVault\Traits\HasMediaFields;
 class Product extends Model {
     use HasMediaFields;
 
-    // Define the custom media fields
+    // Note: Ensure your database migration has a JSON or String column for these fields.
     protected array $mediaFields = [
         'cover_image' => ['multiple' => false, 'disk' => 'public'],
         'gallery'     => ['multiple' => true,  'disk' => 's3'],
@@ -455,7 +468,7 @@ $result = $guard->execute($preview['token'], forceHardDelete: true);
 
 ---
 
-## 6. Response Format
+## 7. Response Format
 
 All successful uploads return an `UploadResult` object. It seamlessly implements `ArrayAccess` and `JsonSerializable`.
 
@@ -486,7 +499,7 @@ Failed items in a batch upload will return an array:
 
 ---
 
-## 7. Database Model
+## 8. Database Model
 
 If `database.enabled` is `true`, all uploads go to the `file_uploads` table. The `FileUpload` model includes powerful query scopes:
 
@@ -506,17 +519,18 @@ $file->owner_exists; // Safely checks if the polymorphic owner model still exist
 
 ---
 
-## 8. Dashboard & Media Manager UI
+## 9. Dashboard & Media Manager UI
 
-The package provides a built-in Single Page Application (SPA) dashboard to manage files, view sessions, configure settings, and scan for orphaned files.
+The package provides a built-in zero-dependency Single Page Application (SPA) dashboard to manage files, view sessions, configure settings, and scan for orphaned files.
 
+- **Frontend Tech Stack:** Built with pure Vanilla JS PJAX SPA architecture, custom CSS Design Tokens, FontAwesome 6 icons, and SweetAlert2 notifications. Requires zero node_modules or Vite/Mix compilation.
 - **Route:** `your-app.com/media-vault` (Changeable via `ui.route_prefix`).
 - **Security Warning:** You **must** attach the `auth` middleware (or a custom admin middleware) in `config/media-vault.php` under `ui.middleware`. Without this, your entire media library is public.
-- Features include real-time cache scans, orphaned file detection, token-based bulk forces deletions, and system statistics.
+- **Capabilities:** Real-time search/filter, orphan disk scanner, token-based bulk forced deletions, session manager, and storage quota statistics.
 
 ---
 
-## 9. Cloud Storage Setup
+## 10. Cloud Storage Setup
 
 To use Amazon S3 or Google Cloud Storage, you must require their Flysystem adapters. The package will intelligently throw a clear exception if they are missing.
 
@@ -525,7 +539,7 @@ To use Amazon S3 or Google Cloud Storage, you must require their Flysystem adapt
 
 ---
 
-## 10. Console Commands
+## 11. Console Commands
 
 The package registers several utilities to simplify file management:
 
@@ -537,7 +551,7 @@ The package registers several utilities to simplify file management:
 
 ---
 
-## 11. ⚠️ Danger Zone / Known Limitations
+## 12. ⚠️ Danger Zone / Known Limitations
 
 > [!CAUTION]
 > Pay strict attention to these operational warnings to prevent data loss in a production environment:
@@ -550,7 +564,7 @@ The package registers several utilities to simplify file management:
 
 ---
 
-## 12. Testing
+## 13. Testing
 
 The package includes a comprehensive test suite. We specifically isolate heavy tests (Benchmarks) to prevent CI timeouts.
 
@@ -570,7 +584,7 @@ vendor/bin/phpunit --testsuite=Benchmarks
 
 ---
 
-## 13. Advanced Security & Performance Features
+## 14. Advanced Security & Performance Features
 
 ### 🛡️ Virus Scanning (ClamAV Integration)
 The package includes built-in automated virus and malware scanning via ClamAV before any file is saved to storage.
@@ -626,13 +640,13 @@ The package distinguishes between two distinct rate limiting safeguards:
 
 ---
 
-## 14. Security
+## 15. Security
 
 If you discover any security-related issues (such as bypasses for SSRF, traversal attacks, or token leaks in the Bulk Deletion Guard), please email `mohamedsamy902@gmail.com` directly instead of opening a public issue. Alternatively, you can use GitHub Security Advisories if enabled on the repository.
 
 ---
 
-## 15. Contributing
+## 16. Contributing
 
 1. Fork the repository.
 2. Create your feature branch (`git checkout -b feature/amazing-feature`).
@@ -643,12 +657,12 @@ If you discover any security-related issues (such as bypasses for SSRF, traversa
 
 ---
 
-## 16. Changelog
+## 17. Changelog
 
 Please see the [CHANGELOG.md](CHANGELOG.md) for more information on what has changed recently.
 
 ---
 
-## 17. License
+## 18. License
 
 The MIT License (MIT). Please see [License File](LICENSE.md) for more information.

@@ -1,9 +1,9 @@
 {
     "name": "mohamedsamy902/laravel-media-vault",
-    "description": "A production-grade, security-hardened media management & chunked file upload package for Laravel.",
+    "description": "A production-grade, security-hardened media management & resumable chunked file upload package for Laravel with a zero-dependency SPA dashboard and mobile REST API support.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "media-vault", "media-vault", "image", "storage", "s3", "chunk", "cdn", "thumbnail", "ssrf", "resumable"],
+    "keywords": ["laravel", "media-vault", "spatie-alternative", "chunk-upload", "resumable-upload", "large-files", "media-manager", "flutter-upload", "mobile-api", "spa-dashboard", "image", "storage", "s3", "cdn", "thumbnail", "ssrf"],
     "homepage": "https://github.com/MohamedSamy902/laravel-media-vault",
     "support": {
         "source": "https://github.com/MohamedSamy902/laravel-media-vault",
