@@ -384,9 +384,33 @@ Accept: application/json
 ##### 3. Send Missing Chunks & Complete Assembly
 The mobile app sends only the indices listed in `missing_chunks` along with the `sessionId`. When the final chunk arrives, the server returns the completed `UploadResult` JSON object.
 
-### Using Central DB Tracking (`HasUploads`)
-Use the `HasUploads` trait to link files to your models polymorphically via the `file_uploads` table.
+---
 
+### Database Storage Strategies: Central Table vs Model Columns
+
+`Laravel Media Vault` provides two distinct architectural approaches for linking uploaded media to your Eloquent models. Choose the strategy that fits your schema requirements:
+
+| Feature / Aspect | Central Table (`HasUploads`) | Separate Model Columns (`HasMediaFields`) |
+|------------------|------------------------------|------------------------------------------|
+| **Database Storage** | Central `file_uploads` table (Polymorphic `morphMany`). | Direct columns on the model's own table (e.g. `products.cover_image`). |
+| **Required Migration** | Package default `file_uploads` table (`php artisan migrate`). | Columns on your model's table (`string` for single, `json` for multiple). |
+| **Best Used For** | Dynamic attachments, user avatars, documents, soft-deleted media tracking. | Standard entity attributes (e.g., product cover, category banner, brand logo). |
+| **Dashboard & Scanner** | Tracked automatically in Media Library dashboard. | Auto-discovered via `php artisan media-vault:discover-models`. |
+| **Thumbnails & Fallbacks**| Full metadata support with automatic size fallback. | Dynamic filename suffix resolution with original image fallback. |
+
+---
+
+#### Strategy 1: Central Database Tracking (`HasUploads`)
+
+Use `HasUploads` when you want files stored as polymorphic relationships in the central `file_uploads` database table.
+
+**1. Migration Setup:**
+Ensure package migrations are executed (`database.enabled = true` in config):
+```bash
+php artisan migrate
+```
+
+**2. Model Definition:**
 ```php
 use Illuminate\Database\Eloquent\Model;
 use MohamedSamy902\LaravelMediaVault\Traits\HasUploads;
@@ -394,17 +418,67 @@ use MohamedSamy902\LaravelMediaVault\Traits\HasUploads;
 class User extends Model {
     use HasUploads;
 }
-
-$user = User::find(1);
-// Retrieve the latest image URL directly
-$avatarUrl = $user->getMediaUrl('image', 'medium'); // Returns medium thumbnail or original
-// Get all available thumbnails
-$thumbnails = $user->getThumbnails();
 ```
 
-### Multi-Source Media Setup (`HasMediaFields`)
-Use the `HasMediaFields` trait on models where you want to store file paths directly in the model's table columns, bypassing the central `file_uploads` table tracking while retaining the package UI, URL resolution, and scanners.
+**3. Uploading & Association:**
+```php
+use MohamedSamy902\LaravelMediaVault\Facades\MediaVault;
 
+// Upload file
+$result = MediaVault::upload($request, ['field_name' => 'avatar']);
+
+// Link to model polymorphically
+$user = User::find(1);
+$user->uploads()->create([
+    'path'          => $result->path,
+    'disk'          => $result->disk,
+    'original_name' => $result->original_name,
+    'mime_type'     => $result->mime_type,
+    'size'          => $result->size,
+    'type'          => 'image',
+    'metadata'      => ['thumbnails' => $result->toArray()['thumbnail_urls'] ?? []],
+]);
+```
+
+**4. Retrieving URLs & Thumbnails:**
+```php
+// Retrieve latest original image URL
+$originalUrl = $user->getMediaUrl('image', 'original');
+
+// Retrieve specific thumbnail size (e.g., 'small', 'medium', 'large')
+$mediumUrl = $user->getMediaUrl('image', 'medium');
+
+// Retrieve map of all available thumbnails: ['small' => '...', 'medium' => '...']
+$allThumbnails = $user->getThumbnails();
+```
+
+---
+
+#### Strategy 2: Separate Model Columns (`HasMediaFields`)
+
+Use `HasMediaFields` when you want file paths stored directly inside columns of your model's database table, avoiding extra rows in the central `file_uploads` table while preserving dashboard scanning and URL resolution.
+
+**1. Migration Setup:**
+Add `string` or `json` columns to your model's database migration:
+```php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration {
+    public function up(): void {
+        Schema::create('products', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->string('cover_image')->nullable(); // Single file path (string)
+            $table->json('gallery')->nullable();       // Multiple file paths (JSON array)
+            $table->timestamps();
+        });
+    }
+};
+```
+
+**2. Model Definition:**
 ```php
 use Illuminate\Database\Eloquent\Model;
 use MohamedSamy902\LaravelMediaVault\Traits\HasMediaFields;
@@ -412,29 +486,65 @@ use MohamedSamy902\LaravelMediaVault\Traits\HasMediaFields;
 class Product extends Model {
     use HasMediaFields;
 
-    // Note: Ensure your database migration has a JSON or String column for these fields.
+    // Declare columns and their storage disks
     protected array $mediaFields = [
         'cover_image' => ['multiple' => false, 'disk' => 'public'],
         'gallery'     => ['multiple' => true,  'disk' => 's3'],
     ];
 }
-
-$product = Product::find(1);
-$url = $product->getMediaUrl('cover_image');
 ```
-Run `php artisan media-vault:discover-models` to auto-register this model in your configuration cache.
+*Run `php artisan media-vault:discover-models` to index custom fields for the dashboard scanner.*
 
-### Generating Thumbnails & Watermarks
-Thumbnails and watermarks are generated automatically based on `config/media-vault.php`.
+**3. Uploading & Saving:**
 ```php
-// If thumbnails.enabled = true, they are generated silently on upload.
-// If processing.image.watermark.enabled = true, it is applied directly to the original file.
-$result = MediaVault::upload($request);
+// Upload single file
+$coverResult = MediaVault::upload($request, ['field_name' => 'cover_image']);
 
-// Access thumbnails via response
-$smallThumb = $result->toArray()['thumbnail_urls']['small'] ?? null;
+// Save path directly to model column
+$product = Product::find(1);
+$product->update([
+    'cover_image' => $coverResult->path,
+]);
+
+// Upload multiple gallery files
+$galleryResults = MediaVault::upload($request, ['field_name' => 'gallery']);
+$paths = array_map(fn($item) => $item->path, $galleryResults);
+$product->update([
+    'gallery' => $paths, // Auto-serialized as JSON
+]);
 ```
-**Warning:** Watermarking is a destructive operation. It overrides the original image.
+
+**4. Retrieving URLs & Thumbnails:**
+```php
+// Retrieve original image URL from column
+$coverUrl = $product->getMediaUrl('cover_image');
+
+// Retrieve specific thumbnail size from column file
+$smallCoverUrl = $product->getMediaUrl('cover_image', 'small');
+
+// Retrieve URL of first image from JSON gallery array
+$galleryFirstUrl = $product->getMediaUrl('gallery');
+```
+
+---
+
+### Image Resolution & Thumbnail Behavior (Enabled vs Disabled)
+
+The `getMediaUrl($fieldOrType, $size)` method is **fail-safe** and works seamlessly whether thumbnails are enabled or disabled in `config/media-vault.php`:
+
+| Configuration State | Requested Size Parameter | Returned URL & Behavior |
+|---------------------|--------------------------|-------------------------|
+| `thumbnails.enabled = true` | `'original'` | Returns the full-resolution original file URL. |
+| `thumbnails.enabled = true` | `'small'`, `'medium'`, `'large'` | Returns the requested generated thumbnail URL. |
+| `thumbnails.enabled = true` | `'invalid_size'` (Non-existent size) | **Safe Fallback:** Automatically returns the original file URL (prevents broken images). |
+| `thumbnails.enabled = false` | Any size (`'small'`, `'medium'`, or `'original'`) | **Safe Fallback:** Always returns the original file URL directly without errors. |
+
+```php
+// Example: Safe URL Resolution in Blade Views
+<img src="{{ $user->getMediaUrl('image', 'small') }}" alt="User Avatar">
+<!-- If thumbnails.enabled = true  => Outputs: https://cdn.site.com/uploads/thumbs/avatar_small.webp -->
+<!-- If thumbnails.enabled = false => Outputs: https://cdn.site.com/uploads/avatar.webp (Original) -->
+```
 
 ### Deleting Files
 ```php
