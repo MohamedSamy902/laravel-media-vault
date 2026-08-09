@@ -1,0 +1,64 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php:     ['8.2', '8.3', '8.4']
+        laravel: ['10.*', '11.*', '12.*', '13.*']
+        exclude:
+          # Laravel 13 requires PHP 8.3+
+          - php: '8.2'
+            laravel: '13.*'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PHP ${{ matrix.php }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: gd, mbstring, xml, json, intl
+          coverage: xdebug
+
+      - name: Resolve testbench version
+        id: testbench
+        run: |
+          LARAVEL="${{ matrix.laravel }}"
+          if   [[ "$LARAVEL" == "10.*" ]]; then echo "version=^8.0"  >> $GITHUB_OUTPUT
+          elif [[ "$LARAVEL" == "11.*" ]]; then echo "version=^9.0"  >> $GITHUB_OUTPUT
+          elif [[ "$LARAVEL" == "12.*" ]]; then echo "version=^10.0" >> $GITHUB_OUTPUT
+          elif [[ "$LARAVEL" == "13.*" ]]; then echo "version=^11.0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies
+        run: |
+          composer require --dev \
+            "orchestra/testbench:${{ steps.testbench.outputs.version }}" \
+            --no-update --no-interaction
+          composer require \
+            "laravel/framework:${{ matrix.laravel }}" \
+            --no-update --no-interaction
+          composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Run tests
+        run: vendor/bin/phpunit --colors=always
+
+      - name: Upload coverage
+        if: matrix.php == '8.3' && matrix.laravel == '12.*'
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          flags: unittests

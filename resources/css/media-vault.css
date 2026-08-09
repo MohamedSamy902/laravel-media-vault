@@ -1,0 +1,22 @@
+.afu-progress-bar {
+    width: 100%;
+    background: #eee;
+    border: 1px solid #ccc;
+    height: 20px;
+    margin-top: 10px;
+}
+.afu-progress-bar-inner {
+    height: 100%;
+    width: 0;
+    background: #4caf50;
+    transition: width 0.2s;
+}
+.afu-upload-btn {
+    margin-top: 10px;
+    padding: 6px 16px;
+    background: #4caf50;
+    color: #fff;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+}

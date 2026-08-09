@@ -1,0 +1,19 @@
+vendor/
+composer.lock
+.phpunit.result.cache
+.phpunit.cache/
+coverage/
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+# Frontend
+node_modules/
+npm-debug.log
+
+# IDE and Editor
+.idea/
+.vscode/
+*.swp

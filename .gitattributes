@@ -1,0 +1,6 @@
+/tests export-ignore
+/.github export-ignore
+/.gitignore export-ignore
+/phpunit.xml export-ignore
+/.phpunit.result.cache export-ignore
+/art export-ignore
