@@ -60,8 +60,23 @@ final class StorageManager
         try {
             $this->writeFile($file, $fullPath, $disk, $mime, $config, $options);
 
+            // After convert_to, stored mime/extension must match the bytes on disk.
+            $imageConfig = $config['processing']['image'] ?? [];
+            if (str_starts_with($mime, 'image') && ($imageConfig['enabled'] ?? false)) {
+                $convertTo = $options['convert_to'] ?? $imageConfig['convert_to'] ?? null;
+                if (is_string($convertTo) && $convertTo !== '') {
+                    $mime = strtolower($convertTo) === 'jpg'
+                        ? 'image/jpeg'
+                        : 'image/' . strtolower($convertTo);
+                }
+            }
+
+            if (Storage::disk($disk)->exists($fullPath)) {
+                $fileSize = (int) Storage::disk($disk)->size($fullPath);
+            }
+
             $thumbnailPaths = $this->maybeGenerateThumbnails(
-                $file, $fullPath, $fileName, $disk, $mime, $config
+                $file, $fullPath, $fileName, $disk, $mime, $config, $options
             );
 
             $databaseId = $this->maybeWriteRecord(
@@ -207,18 +222,32 @@ final class StorageManager
         string       $disk,
         string       $mime,
         array        $config,
+        array        $options = [],
     ): array {
         if (!str_starts_with($mime, 'image') || !($config['thumbnails']['enabled'] ?? false)) {
             return [];
         }
 
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $diskStorage */
+        $diskStorage = Storage::disk($disk);
+
+        // Prefer the already-processed main file so thumbs match convert_to format.
+        $sourcePath = $file->getRealPath() ?: '';
+        if (method_exists($diskStorage, 'path') && $diskStorage->exists($fullPath)) {
+            $processedPath = $diskStorage->path($fullPath);
+            if (is_string($processedPath) && is_file($processedPath)) {
+                $sourcePath = $processedPath;
+            }
+        }
+
         return $this->generateThumbnails(
-            (string) $file->getRealPath(),
+            (string) $sourcePath,
             $fullPath,
             $fileName,
             $disk,
             $config['thumbnails']['sizes'] ?? [],
             $config,
+            $options,
         );
     }
 
@@ -231,6 +260,7 @@ final class StorageManager
      * @param string $disk        The storage disk name
      * @param array<string, mixed> $sizes Thumbnail size definitions from config
      * @param array<string, mixed> $config Full package config
+     * @param array<string, mixed> $options Per-request overrides
      * @return array<string, string>
      */
     private function generateThumbnails(
@@ -240,11 +270,16 @@ final class StorageManager
         string $disk,
         array  $sizes,
         array  $config,
+        array  $options = [],
     ): array {
         $dir      = dirname($fullPath);
         $baseName = pathinfo($fileName, PATHINFO_FILENAME);
         $ext      = pathinfo($fileName, PATHINFO_EXTENSION);
         $paths    = [];
+
+        $imageConfig = $config['processing']['image'] ?? [];
+        $format = $options['convert_to'] ?? $imageConfig['convert_to'] ?? null;
+        $quality = (int) ($options['quality'] ?? $imageConfig['quality'] ?? 85);
 
         /** @var \Illuminate\Filesystem\FilesystemAdapter $diskStorage */
         $diskStorage = Storage::disk($disk);
@@ -255,7 +290,14 @@ final class StorageManager
                 $height = isset($dimensions['height']) && $dimensions['height'] > 0 ? (int) $dimensions['height'] : null;
                 $crop   = (bool) ($dimensions['crop'] ?? false);
 
-                $content   = $this->imageProcessor->thumbnail($realPath, $width, $height, $crop);
+                $content   = $this->imageProcessor->thumbnail(
+                    $realPath,
+                    $width,
+                    $height,
+                    $crop,
+                    is_string($format) ? $format : null,
+                    $quality,
+                );
                 $thumbPath = "{$dir}/thumb_{$sizeName}_{$baseName}.{$ext}";
 
                 $diskStorage->put($thumbPath, $content);

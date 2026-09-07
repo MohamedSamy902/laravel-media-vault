@@ -130,7 +130,14 @@ final class ImageProcessor implements ImageProcessorContract
     }
 
     #[\Override]
-    public function thumbnail(string $path, ?int $width, ?int $height, bool $crop): string
+    public function thumbnail(
+        string $path,
+        ?int $width,
+        ?int $height,
+        bool $crop,
+        ?string $format = null,
+        int $quality = 85,
+    ): string
     {
         try {
             if (!is_file($path) || !is_readable($path)) {
@@ -153,7 +160,7 @@ final class ImageProcessor implements ImageProcessorContract
                 $image->scaleDown(width: $width, height: $height);
             }
 
-            return $image->encode()->toString();
+            return $this->encode($image, $format, $quality);
 
         } catch (Exception $e) {
             Log::error("Thumbnail generation failed: " . $e->getMessage());

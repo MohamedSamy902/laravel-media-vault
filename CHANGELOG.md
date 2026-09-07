@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v1.1.2] - 2026-09-07
+
+### Fixed
+- Thumbnails now encode with configured `convert_to` / quality (avoids WebP filenames with wrong bytes).
+- Thumbnail generation uses the processed main file after conversion, not the original upload temp path.
+- UploadResult mime type and size reflect the file actually stored on disk after image conversion.
+
 ## [v3.0.0] - 2026-08-07
 
 ### Added

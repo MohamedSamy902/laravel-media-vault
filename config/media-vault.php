@@ -133,9 +133,10 @@ return [
     'thumbnails' => [
         'enabled' => true,
         'sizes'   => [
-            'small'  => ['width' => 150, 'height' => 150, 'crop' => true],
+            'small'  => ['width' => 150, 'height' => 150, 'crop' => false],
             'medium' => ['width' => 300, 'height' => 300, 'crop' => false],
             'large'  => ['width' => 600, 'height' => 600, 'crop' => false],
+            'mobile' => ['width' => 480, 'height' => 850, 'crop' => false],
         ],
         'for_videos' => false,  // Requires FFmpeg
         'seconds'    => 5,      // Second to capture for video thumbnails

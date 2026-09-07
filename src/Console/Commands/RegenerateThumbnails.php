@@ -72,12 +72,22 @@ class RegenerateThumbnails extends Command
                             
                             $paths = [];
                             
+                            $format = config('media-vault.processing.image.convert_to');
+                            $quality = (int) config('media-vault.processing.image.quality', 85);
+
                             foreach ($sizes as $sizeName => $sizeConfig) {
                                 $width = (int) ($sizeConfig['width'] ?? null);
                                 $height = (int) ($sizeConfig['height'] ?? null);
                                 $crop = (bool) ($sizeConfig['crop'] ?? false);
                                 
-                                $thumbContent = $processor->thumbnail($tempPath, $width ?: null, $height ?: null, $crop);
+                                $thumbContent = $processor->thumbnail(
+                                    $tempPath,
+                                    $width ?: null,
+                                    $height ?: null,
+                                    $crop,
+                                    is_string($format) ? $format : null,
+                                    $quality,
+                                );
                                 $thumbPath = "{$dir}thumb_{$sizeName}_{$baseName}.{$ext}";
                                 
                                 Storage::disk($disk)->put($thumbPath, $thumbContent);
