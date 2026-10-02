@@ -42,8 +42,7 @@ class PruneUnusedFiles extends Command
 
         $threshold = Carbon::now()->subDays($days);
 
-        $records = FileUpload::query()
-            ->unused()
+        $records = FileUpload::unused()
             ->whereNull('deleted_at')
             ->where('path', 'not like', '%/.trash/%')
             ->where('created_at', '<', $threshold)

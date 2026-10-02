@@ -30,7 +30,10 @@ final class TemporaryUrl
         $expiresAt = $this->resolveExpiration($expiration);
 
         try {
-            return Storage::disk($diskName)->temporaryUrl($path, $expiresAt);
+            /** @var \Illuminate\Filesystem\FilesystemAdapter $filesystem */
+            $filesystem = Storage::disk($diskName);
+
+            return $filesystem->temporaryUrl($path, $expiresAt);
         } catch (Throwable) {
             // Driver does not support temporary URLs (e.g. local).
         }

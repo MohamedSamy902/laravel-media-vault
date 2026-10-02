@@ -26,6 +26,9 @@ class TemporaryUrlController extends Controller
             abort(404);
         }
 
-        return Storage::disk($disk)->response($path);
+        /** @var \Illuminate\Filesystem\FilesystemAdapter $filesystem */
+        $filesystem = Storage::disk($disk);
+
+        return $filesystem->response($path);
     }
 }

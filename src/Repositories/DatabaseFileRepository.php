@@ -269,7 +269,7 @@ class DatabaseFileRepository implements FileRepositoryContract
             deletedAt: $file->deleted_at?->toIso8601String(),
             metadata: is_array($file->metadata) ? $file->metadata : null,
             model_id: $file->model_id,
-            owner_exists: $file->owner_exists,
+            owner_exists: (bool) $file->getAttribute('owner_exists'),
         );
     }
 }

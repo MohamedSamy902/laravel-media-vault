@@ -253,6 +253,8 @@ final class StorageManager
 
     /**
      * Optionally run Spatie Image Optimizer when processing.image.optimize is true.
+     *
+     * @param array<string, mixed> $imageConfig
      */
     private function maybeOptimizeImage(string $disk, string $fullPath, string $mime, array $imageConfig): void
     {
@@ -285,6 +287,7 @@ final class StorageManager
      * @param string       $disk
      * @param string       $mime
      * @param array<string, mixed> $config
+     * @param array<string, mixed> $options
      * @return array<string, string> Map of size name to public URL
      */
     private function maybeGenerateThumbnails(

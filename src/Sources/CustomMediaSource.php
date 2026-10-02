@@ -123,7 +123,7 @@ class CustomMediaSource implements MediaSourceContract
                 $path = $model->getAttribute($field);
                 if (!$path) continue;
                 
-                $isMultiple = is_array($config) ? ($config['multiple'] ?? false) : false;
+                $isMultiple = is_array($config) && ($config['multiple'] ?? false);
                 $paths = $isMultiple ? (is_string($path) ? json_decode($path, true) : $path) : [$path];
 
                 if (!is_array($paths)) continue;
