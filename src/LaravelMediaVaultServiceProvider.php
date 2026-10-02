@@ -149,6 +149,7 @@ class LaravelMediaVaultServiceProvider extends ServiceProvider
             storageManager: $app->make(StorageManager::class),
             fileValidator:  $app->make(FileValidator::class),
             virusScanner:   $app->make(VirusScanner::class),
+            quotaManager:   $app->make(QuotaManagerContract::class),
         ));
     }
 

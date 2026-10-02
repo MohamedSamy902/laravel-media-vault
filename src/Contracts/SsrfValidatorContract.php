@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Contracts;
 
 use MohamedSamy902\LaravelMediaVault\Exceptions\SsrfException;

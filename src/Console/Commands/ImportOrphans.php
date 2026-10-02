@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Console\Commands;
 
 use Illuminate\Console\Command;

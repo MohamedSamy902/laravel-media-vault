@@ -9,8 +9,10 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use MohamedSamy902\LaravelMediaVault\Contracts\QuotaManagerContract;
 use MohamedSamy902\LaravelMediaVault\Models\UploadSession;
 use MohamedSamy902\LaravelMediaVault\Security\VirusScanner;
+use MohamedSamy902\LaravelMediaVault\Support\DiskListingCache;
 use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
 use RuntimeException;
 
@@ -23,6 +25,7 @@ final class ResumableUploadService
         private readonly StorageManager $storageManager,
         private readonly FileValidator  $fileValidator,
         private readonly VirusScanner   $virusScanner,
+        private readonly QuotaManagerContract $quotaManager,
     ) {}
 
     /**
@@ -105,6 +108,24 @@ final class ResumableUploadService
                 // Chunk already stored — return current state without re-writing
                 Log::info("Chunk [{$chunkIndex}] for session [{$sessionId}] already received, skipping.");
             } else {
+                $incomingSize = (int) $chunk->getSize();
+                $receivedBytes = 0;
+                foreach ($chunks as $idx => $received) {
+                    if ($received !== true) {
+                        continue;
+                    }
+                    $existing = $this->chunkPath($sessionId, (int) $idx);
+                    if (is_file($existing)) {
+                        $receivedBytes += (int) filesize($existing);
+                    }
+                }
+
+                if (($receivedBytes + $incomingSize) > ((int) $session->total_size + 1024)) {
+                    throw new RuntimeException(
+                        "Chunk upload exceeds declared total size for session [{$sessionId}]."
+                    );
+                }
+
                 $this->writeChunkToDisk($sessionId, $chunkIndex, $chunk);
                 $session->markChunkReceived($chunkIndex);
             }
@@ -135,84 +156,98 @@ final class ResumableUploadService
      */
     public function completeSession(string $sessionId, array $options = []): UploadResult
     {
-        $session = $this->findActiveSession($sessionId);
-
-        if (!$session->isComplete()) {
-            $missing = $session->missingChunks();
-            throw new RuntimeException(
-                "Cannot complete session [{$sessionId}]: "
-                . count($missing) . " chunk(s) are still missing: "
-                . implode(', ', $missing)
-            );
-        }
-
-        $session->status = 'assembling';
-        $session->save();
-
-        $assembledPath = null;
+        $lock = \Illuminate\Support\Facades\Cache::lock("upload_session_{$sessionId}_complete", 30);
 
         try {
-            $assembledPath = $this->assembleChunks($session);
-            $uploadedFile  = new UploadedFile(
-                $assembledPath,
-                $session->original_name,
-                $session->mime_type,
-                null,
-                true,
-            );
+            $lock->block(10);
 
-            $detectedMime = $uploadedFile->getMimeType() ?: $session->mime_type;
-            if ($detectedMime !== 'application/octet-stream') {
-                $session->mime_type = $detectedMime;
+            return \Illuminate\Support\Facades\DB::transaction(function () use ($sessionId, $options) {
+                $session = $this->findActiveSession($sessionId, true);
+
+                if (in_array($session->status, ['assembling', 'complete'], true)) {
+                    throw new RuntimeException("Upload session [{$sessionId}] is already being completed.");
+                }
+
+                if (!$session->isComplete()) {
+                    $missing = $session->missingChunks();
+                    throw new RuntimeException(
+                        "Cannot complete session [{$sessionId}]: "
+                        . count($missing) . " chunk(s) are still missing: "
+                        . implode(', ', $missing)
+                    );
+                }
+
+                $session->status = 'assembling';
                 $session->save();
-            }
 
-            /** @var array<string, mixed> $customRules */
-            $customRules = is_array($options['validation_rules'] ?? null) ? $options['validation_rules'] : [];
+                $assembledPath = null;
 
-            $this->fileValidator->validate(
-                $uploadedFile,
-                $session->mime_type,
-                empty($customRules) ? '' : 'file',
-                $customRules,
-            );
+                try {
+                    $assembledPath = $this->assembleChunks($session);
+                    $uploadedFile  = new UploadedFile(
+                        $assembledPath,
+                        $session->original_name,
+                        $session->mime_type,
+                        null,
+                        true,
+                    );
 
-            $this->virusScanner->scan((string) $uploadedFile->getRealPath());
+                    $detectedMime = $uploadedFile->getMimeType() ?: $session->mime_type;
+                    if ($detectedMime !== 'application/octet-stream') {
+                        $session->mime_type = $detectedMime;
+                        $session->save();
+                    }
 
-            if (config('media-vault.quota.enabled') && Auth::check()) {
-                app(\MohamedSamy902\LaravelMediaVault\Contracts\QuotaManagerContract::class)
-                    ->check((int) Auth::id(), (int) $uploadedFile->getSize());
-            }
+                    /** @var array<string, mixed> $customRules */
+                    $customRules = is_array($options['validation_rules'] ?? null) ? $options['validation_rules'] : [];
 
-            $result = $this->storageManager->store(
-                $uploadedFile,
-                trim($session->folder, '/'),
-                $session->disk,
-                $options,
-            );
+                    $this->fileValidator->validate(
+                        $uploadedFile,
+                        $session->mime_type,
+                        empty($customRules) ? '' : 'file',
+                        $customRules,
+                    );
 
-            $session->status        = 'complete';
-            $session->assembled_path = $result->path;
-            $session->save();
+                    $this->virusScanner->scan((string) $uploadedFile->getRealPath());
 
-            Log::info("Session [{$sessionId}] completed — file stored at [{$result->path}].");
+                    if (config('media-vault.quota.enabled') && Auth::check()) {
+                        $this->quotaManager->check((int) Auth::id(), (int) $uploadedFile->getSize());
+                    }
 
-            return $result;
+                    $result = $this->storageManager->store(
+                        $uploadedFile,
+                        trim($session->folder, '/'),
+                        $session->disk,
+                        $options,
+                    );
 
-        } catch (\Exception $e) {
-            $session->status = 'failed';
-            $session->save();
+                    $session->status         = 'complete';
+                    $session->assembled_path = $result->path;
+                    $session->save();
 
-            Log::error("Session [{$sessionId}] assembly failed: " . $e->getMessage());
+                    DiskListingCache::forget($session->disk);
+                    Log::info("Session [{$sessionId}] completed — file stored at [{$result->path}].");
 
-            throw new RuntimeException("Session assembly failed: " . $e->getMessage(), 0, $e);
+                    return $result;
+                } catch (\Exception $e) {
+                    $session->status = 'failed';
+                    $session->save();
 
+                    Log::error("Session [{$sessionId}] assembly failed: " . $e->getMessage());
+
+                    throw new RuntimeException("Session assembly failed: " . $e->getMessage(), 0, $e);
+                } finally {
+                    $this->cleanupChunkDir($sessionId);
+
+                    if ($assembledPath !== null && is_file($assembledPath)) {
+                        unlink($assembledPath);
+                    }
+                }
+            });
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            throw new RuntimeException('Could not acquire lock to complete upload session. Please retry.');
         } finally {
-            $this->cleanupChunkDir($sessionId);
-
-            if ($assembledPath !== null && is_file($assembledPath)) {
-                unlink($assembledPath);
-            }
+            $lock->release();
         }
     }
 
@@ -420,8 +455,8 @@ final class ResumableUploadService
             throw new RuntimeException("Upload session [{$sessionId}] has expired.");
         }
 
-        if ($session->status === 'complete') {
-            throw new RuntimeException("Upload session [{$sessionId}] is already complete.");
+        if (in_array($session->status, ['complete', 'assembling'], true)) {
+            throw new RuntimeException("Upload session [{$sessionId}] is already complete or assembling.");
         }
 
         return $session;
@@ -444,9 +479,8 @@ final class ResumableUploadService
     ): void {
         // 1. Quota check if enabled
         if (config('media-vault.quota.enabled', false)) {
-            $quotaManager = app(QuotaManager::class);
-            $userId       = Auth::id();
-            if ($userId !== null && !$quotaManager->hasAvailableSpace((string)$userId, $totalSize)) {
+            $userId = Auth::id();
+            if ($userId !== null && !$this->quotaManager->hasAvailableSpace((string) $userId, $totalSize)) {
                 $mbSize = round($totalSize / 1048576, 2);
                 throw new RuntimeException("Uploading this file ({$mbSize} MB) exceeds your remaining storage quota.");
             }

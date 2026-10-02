@@ -77,8 +77,14 @@ final class QuotaManager implements QuotaManagerContract
         $keyColumn  = $config['key_column'] ?? 'user_id';
         $modelClass = config('media-vault.database.model');
 
-        // ✅ Fixed: if DB tracking is disabled, return zero usage instead of crashing
+        // ✅ Fixed: if DB tracking is disabled, quota enforcement cannot be trusted.
         if (!config('media-vault.database.enabled', false)) {
+            if (config('media-vault.quota.enabled', false)) {
+                throw new QuotaExceededException(
+                    'Quota enforcement requires media-vault.database.enabled=true.'
+                );
+            }
+
             return new QuotaInfo(used: 0, limit: $limit, remaining: $limit, percentage: 0.0);
         }
 

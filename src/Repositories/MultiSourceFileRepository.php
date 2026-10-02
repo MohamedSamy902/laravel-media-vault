@@ -114,7 +114,7 @@ class MultiSourceFileRepository implements FileRepositoryContract
             }
         }
 
-        $disks = config('filesystems.disks', []);
+        $disks = [(string) config('media-vault.storage.disk', 'public')];
         $uploadPath = config('media-vault.storage.path', 'uploads');
         $orphans = [];
         $currentIndex = 0;
@@ -124,7 +124,7 @@ class MultiSourceFileRepository implements FileRepositoryContract
         $scannedCount = 0;
         $maxScanLimit = config('media-vault.max_orphan_scan_limit', 100000);
 
-        foreach (array_keys($disks) as $disk) {
+        foreach ($disks as $disk) {
             try {
                 /** @var \Illuminate\Filesystem\FilesystemAdapter $diskStorage */
                 $diskStorage = Storage::disk((string) $disk);

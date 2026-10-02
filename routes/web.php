@@ -8,7 +8,8 @@ use MohamedSamy902\LaravelMediaVault\Http\Controllers\MediaManagerController;
 $prefix     = config('media-vault.ui.route_prefix', 'media-vault');
 $middleware = config('media-vault.ui.middleware', ['web']);
 
-if (config('media-vault.ui.require_auth', false)) {
+// Fail closed when the config key is missing (null), not only when explicitly true.
+if (config('media-vault.ui.require_auth') !== false) {
     $middleware = array_values(array_unique([...$middleware, 'auth']));
 }
 

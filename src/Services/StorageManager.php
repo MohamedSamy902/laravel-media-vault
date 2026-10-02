@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use MohamedSamy902\LaravelMediaVault\Contracts\ImageProcessorContract;
+use MohamedSamy902\LaravelMediaVault\Support\DiskListingCache;
 use MohamedSamy902\LaravelMediaVault\Support\MediaUrl;
 use MohamedSamy902\LaravelMediaVault\Support\ThumbnailPath;
 use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
@@ -103,6 +104,8 @@ final class StorageManager
             foreach ($thumbnailPaths as $sizeName => $thumbPath) {
                 $thumbnailUrls[$sizeName] = MediaUrl::for($disk, $thumbPath, $config);
             }
+
+            DiskListingCache::forget($disk);
 
             return new UploadResult(
                 status:        true,
@@ -486,6 +489,7 @@ final class StorageManager
         }
 
         event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($logical, false));
+        DiskListingCache::forget($disk);
         Log::info("File moved to trash [ID/Path: {$idOrPath}].");
 
         return ['status' => true, 'message' => 'File moved to trash successfully.'];
@@ -512,6 +516,7 @@ final class StorageManager
         $record->restore();
 
         event(new \MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent($logical));
+        DiskListingCache::forget($disk);
         Log::info("File restored from trash [ID/Path: {$idOrPath}].");
 
         return ['status' => true, 'message' => 'File restored successfully.'];
@@ -533,6 +538,7 @@ final class StorageManager
         $record->forceDelete();
 
         event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($logical, true));
+        DiskListingCache::forget($disk);
         Log::info("File permanently deleted [ID/Path: {$idOrPath}].");
 
         return ['status' => true, 'message' => 'File permanently deleted from database and storage.'];
@@ -555,6 +561,7 @@ final class StorageManager
 
         $this->trashManager->moveToTrash($disk, $logical);
         event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($logical, false));
+        DiskListingCache::forget($disk);
         Log::info("File moved to trash: {$logical}.");
 
         return ['status' => true, 'message' => 'File moved to trash successfully.'];
@@ -576,6 +583,7 @@ final class StorageManager
         }
 
         event(new \MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent($logical));
+        DiskListingCache::forget($disk);
         Log::info("File restored from trash: {$logical}.");
 
         return ['status' => true, 'message' => 'File restored successfully.'];
@@ -601,6 +609,7 @@ final class StorageManager
         $this->deleteThumbnails($disk, $logical, basename($logical), $config);
 
         event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($logical, true));
+        DiskListingCache::forget($disk);
         Log::info("File permanently deleted from storage: {$logical}.");
 
         return ['status' => true, 'message' => 'File permanently deleted from storage.'];

@@ -217,9 +217,11 @@ return [
     // Media Manager UI Dashboard
     // =========================================================================
 
-    'ui' => [
+        'ui' => [
         'route_prefix' => env('MEDIA_VAULT_UI_PREFIX', env('FILE_UPLOAD_UI_PREFIX', 'media-vault')),
         'require_auth' => env('MEDIA_VAULT_UI_REQUIRE_AUTH', env('FILE_UPLOAD_UI_REQUIRE_AUTH', true)),
+        // When true (default), mutating dashboard actions require the file owner or a null owner.
+        'enforce_ownership' => env('MEDIA_VAULT_UI_ENFORCE_OWNERSHIP', true),
         // Add 'auth' manually, or enable ui.require_auth above.
         'middleware'   => ['web'],
     ],

@@ -367,15 +367,31 @@ declare(strict_types=1);
                 return true;
             }
 
-            if (config('media-vault.database.enabled', true)) {
-                $file = FileUpload::withTrashed()->where('path', $path)->first();
-                
-                // File must exist in the database to be managed
-                if (!$file) {
-                    return true;
-                }
+            if (!config('media-vault.database.enabled', true)) {
+                return false;
             }
 
-            return false;
+            $file = FileUpload::withTrashed()->where('path', $path)->first();
+
+            // File must exist in the database to be managed
+            if (!$file) {
+                return true;
+            }
+
+            if (!config('media-vault.ui.enforce_ownership', true)) {
+                return false;
+            }
+
+            // Unowned library files are manageable by any authenticated dashboard user.
+            if ($file->user_id === null) {
+                return false;
+            }
+
+            $authId = \Illuminate\Support\Facades\Auth::id();
+            if ($authId === null) {
+                return true;
+            }
+
+            return (int) $file->user_id !== (int) $authId;
         }
     }

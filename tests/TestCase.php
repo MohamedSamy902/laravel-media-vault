@@ -44,6 +44,7 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('media-vault.security.rate_limit.enabled', false);
         $app['config']->set('media-vault.security.strict_mime_validation', false);
         $app['config']->set('media-vault.ui.require_auth', false);
+        $app['config']->set('media-vault.ui.enforce_ownership', false);
         
         $app['config']->set('app.key', 'base64:JbH1T8/s+cZqKqP7wW9/VbYt9E6mJtKqQ5yQ4oH0Ycw=');
     }
