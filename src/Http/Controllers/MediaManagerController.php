@@ -204,12 +204,12 @@ declare(strict_types=1);
             }
 
             $paths = array_map(fn($encoded) => base64_decode((string) $encoded), $encodedPaths);
-            $paths = array_filter($paths, fn($path) => !str_contains($path, '../') && !str_contains($path, '..\\') && !str_contains($path, "\0"));
-
-            if (config('media-vault.database.enabled', true)) {
-                $query = FileUpload::withTrashed()->whereIn('path', $paths);
-                $paths = $query->pluck('path')->toArray();
-            }
+            $paths = array_values(array_filter(
+                $paths,
+                fn($path) => is_string($path)
+                    && $path !== ''
+                    && !$this->isUnauthorizedToModify($path)
+            ));
 
             $preview = $guard->preview($paths, 'dashboard');
             

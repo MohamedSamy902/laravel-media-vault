@@ -208,7 +208,15 @@ final class ResumableUploadService
                         $customRules,
                     );
 
-                    $this->virusScanner->scan((string) $uploadedFile->getRealPath());
+                    if (($assembledSize = (int) $uploadedFile->getSize()) > 0
+                && abs($assembledSize - (int) $session->total_size) > 1024
+            ) {
+                throw new RuntimeException(
+                    "Assembled file size [{$assembledSize}] does not match declared session size [{$session->total_size}]."
+                );
+            }
+
+            $this->virusScanner->scan((string) $uploadedFile->getRealPath());
 
                     if (config('media-vault.quota.enabled') && Auth::check()) {
                         $this->quotaManager->check((int) Auth::id(), (int) $uploadedFile->getSize());
