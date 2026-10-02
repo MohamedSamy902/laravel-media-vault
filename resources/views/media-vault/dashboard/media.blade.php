@@ -423,14 +423,18 @@
                 </div>`;
             }
 
+            const hardDeleteNote = force
+                ? `<div style="margin-top:12px; color:var(--danger);">This permanently deletes files from the <strong>database</strong> and <strong>storage</strong> (including thumbnails). This cannot be undone.</div>`
+                : `<div style="margin-top:12px;">Files will be moved to Trash and can be restored later.</div>`;
+
             Swal.fire({
                 title: force ? 'Permanently Delete?' : 'Move to Trash?',
-                html: `You are about to process <strong>${p.count}</strong> files.<br>${extraWarning}${sampleHtml}`,
+                html: `You are about to process <strong>${p.count}</strong> files.${hardDeleteNote}<br>${extraWarning}${sampleHtml}`,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--danger)',
                 cancelButtonColor: 'var(--text-muted)',
-                confirmButtonText: 'Yes, proceed!'
+                confirmButtonText: force ? 'Yes, delete forever' : 'Yes, move to trash'
             }).then((result) => {
                 if (result.isConfirmed) {
                     const url = force ? '{{ route("media-vault.media.bulk-force-destroy") }}' : '{{ route("media-vault.media.bulk-destroy") }}';

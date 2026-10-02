@@ -140,6 +140,11 @@ class MultiSourceFileRepository implements FileRepositoryContract
                     $file = $item->path();
                     if (str_starts_with(basename($file), '.')) continue;
 
+                    // Soft-deleted physical files live under .trash/ — never treat them as live orphans.
+                    if (\MohamedSamy902\LaravelMediaVault\Support\TrashPath::isTrashed($file)) {
+                        continue;
+                    }
+
                     if (!isset($usedPathsMap[$file])) {
                         if ($currentIndex >= $offset && $currentIndex < $offset + $perPage) {
                             $orphans[] = ['path' => $file, 'disk' => $disk];

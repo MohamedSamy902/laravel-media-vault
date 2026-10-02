@@ -111,7 +111,58 @@ final class StorageManager
     }
 
     /**
-     * Deletes a file and its thumbnails from the storage disk.
+     * Soft-deletes a file: keeps DB record (deleted_at) and moves bytes to .trash/.
+     *
+     * @param int|string $idOrPath
+     * @return array{status: bool, message: string}
+     */
+    public function trash(int|string $idOrPath): array
+    {
+        $config = is_array(config('media-vault')) ? config('media-vault') : [];
+
+        if ($config['database']['enabled'] ?? false) {
+            return $this->trashByRecord($idOrPath, $config);
+        }
+
+        return $this->trashByPath((string) $idOrPath, $config);
+    }
+
+    /**
+     * Restores a soft-deleted file from .trash/ and clears deleted_at.
+     *
+     * @param int|string $idOrPath
+     * @return array{status: bool, message: string}
+     */
+    public function restore(int|string $idOrPath): array
+    {
+        $config = is_array(config('media-vault')) ? config('media-vault') : [];
+
+        if ($config['database']['enabled'] ?? false) {
+            return $this->restoreByRecord($idOrPath, $config);
+        }
+
+        return $this->restoreByPath((string) $idOrPath, $config);
+    }
+
+    /**
+     * Permanently deletes a file from storage and database.
+     *
+     * @param int|string $idOrPath
+     * @return array{status: bool, message: string}
+     */
+    public function forceDelete(int|string $idOrPath): array
+    {
+        $config = is_array(config('media-vault')) ? config('media-vault') : [];
+
+        if ($config['database']['enabled'] ?? false) {
+            return $this->forceDeleteByRecord($idOrPath, $config);
+        }
+
+        return $this->forceDeleteByPath((string) $idOrPath, $config);
+    }
+
+    /**
+     * Permanently deletes a file (alias of forceDelete for backward compatibility).
      *
      * @param int|string $idOrPath The database record ID or the file path
      * @return array{status: bool, message: string}
@@ -119,13 +170,7 @@ final class StorageManager
      */
     public function delete(int|string $idOrPath): array
     {
-        $config = is_array(config('media-vault')) ? config('media-vault') : [];
-
-        if ($config['database']['enabled'] ?? false) {
-            return $this->deleteByRecord($idOrPath, $config);
-        }
-
-        return $this->deleteByPath((string) $idOrPath, $config);
+        return $this->forceDelete($idOrPath);
     }
 
     /**
@@ -367,84 +412,171 @@ final class StorageManager
     }
 
     /**
-     * Deletes a file using its database record for path and disk resolution.
+     * Soft-deletes using the database record.
      *
      * @param int|string $idOrPath
      * @param array<string, mixed> $config
      * @return array{status: bool, message: string}
      */
-    private function deleteByRecord(int|string $idOrPath, array $config): array
+    private function trashByRecord(int|string $idOrPath, array $config): array
+    {
+        $record = $this->findRecord($idOrPath, $config);
+        $disk = (string) ($record->disk ?? $config['storage']['disk'] ?? 'public');
+        $logical = \MohamedSamy902\LaravelMediaVault\Support\TrashPath::normalize((string) $record->path);
+        $thumbs = is_array($record->metadata['thumbnails'] ?? null) ? $record->metadata['thumbnails'] : null;
+
+        app(TrashManager::class)->moveToTrash($disk, $logical, $thumbs);
+
+        if (!$record->trashed()) {
+            $record->delete();
+        }
+
+        event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($logical, false));
+        Log::info("File moved to trash [ID/Path: {$idOrPath}].");
+
+        return ['status' => true, 'message' => 'File moved to trash successfully.'];
+    }
+
+    /**
+     * @param int|string $idOrPath
+     * @param array<string, mixed> $config
+     * @return array{status: bool, message: string}
+     */
+    private function restoreByRecord(int|string $idOrPath, array $config): array
+    {
+        $record = $this->findRecord($idOrPath, $config, withTrashed: true);
+
+        if (!$record->trashed()) {
+            return ['status' => true, 'message' => 'File is already active.'];
+        }
+
+        $disk = (string) ($record->disk ?? $config['storage']['disk'] ?? 'public');
+        $logical = \MohamedSamy902\LaravelMediaVault\Support\TrashPath::normalize((string) $record->path);
+        $thumbs = is_array($record->metadata['thumbnails'] ?? null) ? $record->metadata['thumbnails'] : null;
+
+        app(TrashManager::class)->restoreFromTrash($disk, $logical, $thumbs);
+        $record->restore();
+
+        event(new \MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent($logical));
+        Log::info("File restored from trash [ID/Path: {$idOrPath}].");
+
+        return ['status' => true, 'message' => 'File restored successfully.'];
+    }
+
+    /**
+     * @param int|string $idOrPath
+     * @param array<string, mixed> $config
+     * @return array{status: bool, message: string}
+     */
+    private function forceDeleteByRecord(int|string $idOrPath, array $config): array
+    {
+        $record = $this->findRecord($idOrPath, $config, withTrashed: true);
+        $disk = (string) ($record->disk ?? $config['storage']['disk'] ?? 'public');
+        $logical = \MohamedSamy902\LaravelMediaVault\Support\TrashPath::normalize((string) $record->path);
+        $thumbs = is_array($record->metadata['thumbnails'] ?? null) ? $record->metadata['thumbnails'] : null;
+
+        app(TrashManager::class)->purge($disk, $logical, $thumbs);
+        $record->forceDelete();
+
+        event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($logical, true));
+        Log::info("File permanently deleted [ID/Path: {$idOrPath}].");
+
+        return ['status' => true, 'message' => 'File permanently deleted from database and storage.'];
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     * @return array{status: bool, message: string}
+     */
+    private function trashByPath(string $path, array $config): array
+    {
+        $disk = (string) ($config['storage']['disk'] ?? 'public');
+        $logical = \MohamedSamy902\LaravelMediaVault\Support\TrashPath::isTrashed($path)
+            ? \MohamedSamy902\LaravelMediaVault\Support\TrashPath::fromTrash($path)
+            : \MohamedSamy902\LaravelMediaVault\Support\TrashPath::normalize($path);
+
+        if (!app(TrashManager::class)->existsAnywhere($disk, $logical)) {
+            throw new RuntimeException("File not found in storage: {$path}");
+        }
+
+        app(TrashManager::class)->moveToTrash($disk, $logical);
+        event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($logical, false));
+        Log::info("File moved to trash: {$logical}.");
+
+        return ['status' => true, 'message' => 'File moved to trash successfully.'];
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     * @return array{status: bool, message: string}
+     */
+    private function restoreByPath(string $path, array $config): array
+    {
+        $disk = (string) ($config['storage']['disk'] ?? 'public');
+        $logical = \MohamedSamy902\LaravelMediaVault\Support\TrashPath::isTrashed($path)
+            ? \MohamedSamy902\LaravelMediaVault\Support\TrashPath::fromTrash($path)
+            : \MohamedSamy902\LaravelMediaVault\Support\TrashPath::normalize($path);
+
+        if (!app(TrashManager::class)->restoreFromTrash($disk, $logical)) {
+            throw new RuntimeException("Trashed file not found in storage: {$path}");
+        }
+
+        event(new \MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent($logical));
+        Log::info("File restored from trash: {$logical}.");
+
+        return ['status' => true, 'message' => 'File restored successfully.'];
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     * @return array{status: bool, message: string}
+     */
+    private function forceDeleteByPath(string $path, array $config): array
+    {
+        $disk = (string) ($config['storage']['disk'] ?? 'public');
+        $logical = \MohamedSamy902\LaravelMediaVault\Support\TrashPath::isTrashed($path)
+            ? \MohamedSamy902\LaravelMediaVault\Support\TrashPath::fromTrash($path)
+            : \MohamedSamy902\LaravelMediaVault\Support\TrashPath::normalize($path);
+
+        if (!app(TrashManager::class)->existsAnywhere($disk, $logical)) {
+            throw new RuntimeException("File not found in storage: {$path}");
+        }
+
+        app(TrashManager::class)->purge($disk, $logical, null);
+        // Also clean convention-based thumbs around the active path.
+        $this->deleteThumbnails($disk, $logical, basename($logical), $config);
+
+        event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($logical, true));
+        Log::info("File permanently deleted from storage: {$logical}.");
+
+        return ['status' => true, 'message' => 'File permanently deleted from storage.'];
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function findRecord(int|string $idOrPath, array $config, bool $withTrashed = false): \MohamedSamy902\LaravelMediaVault\Models\FileUpload
     {
         $model = $config['database']['model'];
 
         try {
-            $record = is_numeric($idOrPath)
-                ? $model::findOrFail($idOrPath)
-                : $model::where('path', $idOrPath)->firstOrFail();
+            $query = $withTrashed ? $model::withTrashed() : $model::query();
+
+            if (is_numeric($idOrPath)) {
+                return $query->findOrFail($idOrPath);
+            }
+
+            $path = (string) $idOrPath;
+            $logical = \MohamedSamy902\LaravelMediaVault\Support\TrashPath::isTrashed($path)
+                ? \MohamedSamy902\LaravelMediaVault\Support\TrashPath::fromTrash($path)
+                : \MohamedSamy902\LaravelMediaVault\Support\TrashPath::normalize($path);
+
+            return $query->where(function ($q) use ($logical, $path) {
+                $q->where('path', $logical)->orWhere('path', $path);
+            })->firstOrFail();
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             throw new RuntimeException("File [{$idOrPath}] was not found in the database.", 0, $e);
         }
-
-        $disk = $record->disk ?? $config['storage']['disk'];
-
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $diskStorage */
-        $diskStorage = Storage::disk($disk);
-
-        if ($diskStorage->exists($record->path)) {
-            if (!$diskStorage->delete($record->path)) {
-                throw new \RuntimeException("Failed to delete physical file: {$record->path}");
-            }
-        } else {
-            Log::warning("Physical file not found during delete: {$record->path}");
-        }
-
-        if (!empty($record->metadata['thumbnails']) && is_array($record->metadata['thumbnails'])) {
-            foreach ($record->metadata['thumbnails'] as $thumbPath) {
-                if (is_string($thumbPath) && $diskStorage->exists($thumbPath)) {
-                    if (!$diskStorage->delete($thumbPath)) {
-                        throw new \RuntimeException("Failed to delete thumbnail: {$thumbPath}");
-                    }
-                }
-            }
-        } else {
-            $this->deleteThumbnails($disk, $record->path, $record->name, $config);
-        }
-
-        $record->delete();
-
-        Log::info("File deleted successfully [ID/Path: {$idOrPath}].");
-
-        return ['status' => true, 'message' => 'File deleted successfully.'];
-    }
-
-    /**
-     * Deletes a file directly by its storage path without consulting the database.
-     *
-     * @param string $path
-     * @param array<string, mixed> $config
-     * @return array{status: bool, message: string}
-     */
-    private function deleteByPath(string $path, array $config): array
-    {
-        $disk = $config['storage']['disk'];
-
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $diskStorage */
-        $diskStorage = Storage::disk($disk);
-
-        if (!$diskStorage->exists($path)) {
-            throw new RuntimeException("File not found in storage: {$path}");
-        }
-
-        if (!$diskStorage->delete($path)) {
-            throw new RuntimeException("Failed to delete physical file: {$path}");
-        }
-
-        $fileName = basename($path);
-        $this->deleteThumbnails($disk, $path, $fileName, $config);
-
-        Log::info("File deleted from storage: {$path}.");
-
-        return ['status' => true, 'message' => 'File deleted successfully.'];
     }
 
     /**
@@ -477,7 +609,7 @@ final class StorageManager
             }
         } catch (\Exception $e) {
             if ($e instanceof \RuntimeException) {
-                throw $e; // Do not swallow our own deletion failure exceptions
+                throw $e;
             }
             Log::error("Failed to clean up thumbnails: " . $e->getMessage());
         }

@@ -96,11 +96,45 @@ class MediaVaultService implements MediaVaultContract
     }
 
     /**
-     * Deletes a file or a batch of files.
+     * Soft-deletes (moves to trash) a file or a batch of files.
      *
-     * Accepts an integer database record ID, a storage path string, or an array
-     * of either. Returns a single result array for scalar input or an array of
-     * result arrays for batch input.
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    #[\Override]
+    public function trash(int|string|array $idOrPath): array
+    {
+        return $this->mutateMany($idOrPath, fn (int|string $item) => $this->storageManager->trash($item));
+    }
+
+    /**
+     * Restores a soft-deleted file (or batch) from trash.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    #[\Override]
+    public function restore(int|string|array $idOrPath): array
+    {
+        return $this->mutateMany($idOrPath, fn (int|string $item) => $this->storageManager->restore($item));
+    }
+
+    /**
+     * Permanently deletes a file or batch from database and storage.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    #[\Override]
+    public function forceDelete(int|string|array $idOrPath): array
+    {
+        return $this->mutateMany($idOrPath, fn (int|string $item) => $this->storageManager->forceDelete($item));
+    }
+
+    /**
+     * Permanently deletes a file or a batch of files.
+     *
+     * Alias of forceDelete() for backward compatibility.
      *
      * @param int|string|array<int, int|string> $idOrPath
      * @return array<string, mixed>|array<int, array<string, mixed>>
@@ -108,15 +142,25 @@ class MediaVaultService implements MediaVaultContract
     #[\Override]
     public function delete(int|string|array $idOrPath): array
     {
+        return $this->forceDelete($idOrPath);
+    }
+
+    /**
+     * @param int|string|array<int, int|string> $idOrPath
+     * @param callable(int|string): array<string, mixed> $callback
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    private function mutateMany(int|string|array $idOrPath, callable $callback): array
+    {
         if (!is_array($idOrPath)) {
-            return $this->storageManager->delete($idOrPath);
+            return $callback($idOrPath);
         }
 
         $results = [];
 
         foreach ($idOrPath as $item) {
             try {
-                $results[] = $this->storageManager->delete($item);
+                $results[] = $callback($item);
             } catch (\Exception $e) {
                 $results[] = ['status' => false, 'error' => $e->getMessage(), 'item' => $item];
             }

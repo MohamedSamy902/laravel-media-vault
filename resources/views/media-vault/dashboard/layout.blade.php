@@ -943,13 +943,14 @@
         function deleteFile(id, force = false) {
             Swal.fire({
                 title: force ? 'Permanently Delete?' : 'Move to Trash?',
-                text: force ? "This will delete the file from disk. You won't be able to revert this!" :
-                    "You can restore this file later.",
+                html: force
+                    ? "This will <strong>permanently delete</strong> the file from the <strong>database</strong> and from <strong>storage</strong> (including thumbnails).<br><br>You will not be able to restore it."
+                    : "The file will be moved to Trash. You can restore it later.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--danger)',
                 cancelButtonColor: 'var(--text-muted)',
-                confirmButtonText: 'Yes, delete it!',
+                confirmButtonText: force ? 'Yes, delete forever' : 'Yes, move to trash',
                 background: 'var(--bg-card)',
                 color: 'var(--text-primary)'
             }).then((result) => {

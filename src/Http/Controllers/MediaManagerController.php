@@ -90,10 +90,9 @@ declare(strict_types=1);
             // We mark disk_exists true for DTOs by default because Disk Repository scans real disk.
             // For Database repository, it might be false. DTOs should carry this logic.
             $files->through(function ($file) {
-                $file->disk_exists = true; // In Disk Mode it's always true. For DB mode it should be validated.
-                // Encoded path for safe URLs
+                // Encoded path for safe URLs (logical path)
                 $file->encoded_path = base64_encode($file->path);
-                
+
                 // Detect if this file is likely a thumbnail based on naming convention
                 $basename = basename($file->path);
                 if (preg_match('/^thumb_([^_]+)_(.+)$/', $basename, $matches)) {
@@ -103,7 +102,7 @@ declare(strict_types=1);
                     $meta['guessed_parent'] = $matches[2];
                     $file->metadata = $meta;
                 }
-                
+
                 return $file;
             });
 
@@ -187,7 +186,12 @@ declare(strict_types=1);
 
             $deleted = $this->repository->delete($path, true); // hard delete
 
-            return response()->json(['status' => $deleted, 'message' => $deleted ? 'File permanently deleted.' : 'Failed to delete file.']);
+            return response()->json([
+                'status' => $deleted,
+                'message' => $deleted
+                    ? 'File permanently deleted from the database and storage (including thumbnails). This cannot be undone.'
+                    : 'Failed to permanently delete file.',
+            ]);
         }
 
         public function bulkDestroyPreview(Request $request, BulkDeletionGuard $guard): JsonResponse
@@ -237,7 +241,10 @@ declare(strict_types=1);
             
             try {
                 $result = $guard->execute($token, true);
-                return response()->json(['status' => true, 'message' => "{$result['deleted']} files permanently deleted."]);
+                return response()->json([
+                    'status' => true,
+                    'message' => "{$result['deleted']} files permanently deleted from the database and storage. This cannot be undone.",
+                ]);
             } catch (\Exception $e) {
                 return response()->json(['status' => false, 'message' => $e->getMessage()], 400);
             }

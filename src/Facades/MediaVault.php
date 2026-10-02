@@ -7,6 +7,9 @@ use Illuminate\Support\Facades\Facade;
 /**
  * @method static \MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult|array upload(mixed $source, array $options = [])
  * @method static \MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult|array uploadFromUrl(string|array $url, array $options = [])
+ * @method static array trash(int|string|array $idOrPath)
+ * @method static array restore(int|string|array $idOrPath)
+ * @method static array forceDelete(int|string|array $idOrPath)
  * @method static array delete(int|string|array $idOrPath)
  *
  * @see \MohamedSamy902\LaravelMediaVault\Services\MediaVaultService
