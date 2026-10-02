@@ -111,4 +111,51 @@ class HasUploadsTraitTest extends TestCase
         $dummy = DummyModelWithUploads::create(['name' => 'Test Dummy']);
         $this->assertNull($dummy->getMediaUrl('image'));
     }
+
+    public function test_attach_upload_links_record_and_marks_used()
+    {
+        $dummy = DummyModelWithUploads::create(['name' => 'Test Dummy']);
+
+        $upload = FileUpload::create([
+            'name' => 'orphan',
+            'path' => 'uploads/orphan.jpg',
+            'original_name' => 'orphan.jpg',
+            'disk' => 'public',
+            'mime_type' => 'image/jpeg',
+            'type' => 'image',
+            'size' => 512,
+            'is_used' => false,
+        ]);
+
+        $linked = $dummy->attachUpload($upload);
+
+        $this->assertTrue($linked->is_used);
+        $this->assertSame($dummy->id, $linked->model_id);
+        $this->assertSame(get_class($dummy), $linked->model_type);
+        $this->assertCount(1, $dummy->fresh()->uploads);
+    }
+
+    public function test_detach_upload_clears_usage()
+    {
+        $dummy = DummyModelWithUploads::create(['name' => 'Test Dummy']);
+
+        $upload = FileUpload::create([
+            'name' => 'linked',
+            'path' => 'uploads/linked.jpg',
+            'original_name' => 'linked.jpg',
+            'disk' => 'public',
+            'mime_type' => 'image/jpeg',
+            'type' => 'image',
+            'size' => 512,
+            'is_used' => true,
+            'model_type' => get_class($dummy),
+            'model_id' => $dummy->id,
+        ]);
+
+        $detached = $dummy->detachUpload($upload);
+
+        $this->assertFalse($detached->is_used);
+        $this->assertNull($detached->model_type);
+        $this->assertNull($detached->model_id);
+    }
 }

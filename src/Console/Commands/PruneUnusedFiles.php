@@ -12,17 +12,40 @@ use MohamedSamy902\LaravelMediaVault\Security\BulkDeletionGuard;
 
 class PruneUnusedFiles extends Command
 {
-    protected $signature = 'media-vault:prune-unused {--days=30 : The number of days after which unused files are deleted} {--force : Force hard deletion without confirmation} {--dry-run : Show what would be deleted without actually deleting}';
+    protected $signature = 'media-vault:prune-unused {--days= : Days unused before deletion (defaults to database.prune_after)} {--force : Force hard deletion without confirmation} {--dry-run : Show what would be deleted without actually deleting}';
     protected $description = 'Prune unused file uploads older than the specified number of days.';
 
     public function handle(BulkDeletionGuard $guard): int
     {
-        $days = (int) $this->option('days');
+        $configuredDays = config('media-vault.database.prune_after');
+        $daysOption = $this->option('days');
+
+        if ($daysOption === null || $daysOption === '') {
+            if ($configuredDays === null) {
+                $this->warn('Pruning is disabled (database.prune_after is null). Pass --days to run anyway.');
+                return 0;
+            }
+            $days = (int) $configuredDays;
+        } else {
+            $days = (int) $daysOption;
+        }
+
+        if ($days < 1) {
+            $this->error('Days must be at least 1.');
+            return 1;
+        }
+
         $force = $this->option('force');
         $dryRun = $this->option('dry-run');
         $threshold = Carbon::now()->subDays($days);
 
-        $paths = FileUpload::unused()->where('created_at', '<', $threshold)->pluck('path')->toArray();
+        $paths = FileUpload::query()
+            ->unused()
+            ->whereNull('deleted_at')
+            ->where('path', 'not like', '%/.trash/%')
+            ->where('created_at', '<', $threshold)
+            ->pluck('path')
+            ->toArray();
         $count = count($paths);
 
         if ($count === 0) {
