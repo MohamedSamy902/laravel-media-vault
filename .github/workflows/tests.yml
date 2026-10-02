@@ -5,6 +5,9 @@ on:
     branches: [main, develop, master]
   pull_request:
     branches: [main, master]
+  schedule:
+    # Catch new Laravel majors/minors without waiting for a package release.
+    - cron: '0 6 * * 1'
 
 jobs:
   test:
@@ -34,12 +37,9 @@ jobs:
       - name: Resolve testbench version
         id: testbench
         run: |
-          LARAVEL="${{ matrix.laravel }}"
-          if   [[ "$LARAVEL" == "10.*" ]]; then echo "version=^8.0"  >> $GITHUB_OUTPUT
-          elif [[ "$LARAVEL" == "11.*" ]]; then echo "version=^9.0"  >> $GITHUB_OUTPUT
-          elif [[ "$LARAVEL" == "12.*" ]]; then echo "version=^10.0" >> $GITHUB_OUTPUT
-          elif [[ "$LARAVEL" == "13.*" ]]; then echo "version=^11.0" >> $GITHUB_OUTPUT
-          fi
+          # Orchestra Testbench major tracks Laravel as (Laravel major - 2).
+          MAJOR=$(echo "${{ matrix.laravel }}" | grep -oE '^[0-9]+')
+          echo "version=^$((MAJOR - 2)).0" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: |
@@ -65,3 +65,57 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage.xml
           flags: unittests
+
+  # Continuously validates the newest stable Laravel without editing this matrix.
+  laravel-latest:
+    name: Latest stable Laravel (forward compat)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: gd, mbstring, xml, json, intl, fileinfo
+          coverage: none
+
+      - name: Resolve latest Laravel + Testbench
+        id: resolve
+        run: |
+          php -r '
+            $json = json_decode(file_get_contents("https://repo.packagist.org/p2/laravel/framework.json"), true);
+            $packages = $json["packages"]["laravel/framework"] ?? [];
+            $chosen = null;
+            foreach ($packages as $pkg) {
+              $version = $pkg["version"] ?? "";
+              if (!preg_match("/^\d+\.\d+\.\d+$/", $version)) {
+                continue; // stable only
+              }
+              if (version_compare($version, "10.0.0", "<")) {
+                continue;
+              }
+              $chosen = $version;
+              break; // Packagist lists newest first
+            }
+            if ($chosen === null) {
+              fwrite(STDERR, "Could not resolve latest Laravel version\n");
+              exit(1);
+            }
+            $major = (int) explode(".", $chosen)[0];
+            $testbench = "^" . max(8, $major - 2) . ".0";
+            $php = $major >= 13 ? "8.3" : "8.2";
+            file_put_contents(getenv("GITHUB_OUTPUT"), "laravel={$chosen}\ntestbench={$testbench}\nphp={$php}\n", FILE_APPEND);
+            echo "Latest Laravel: {$chosen}; Testbench: {$testbench}\n";
+          '
+
+      - name: Install dependencies
+        run: |
+          composer require --dev "orchestra/testbench:${{ steps.resolve.outputs.testbench }}" --no-update --no-interaction
+          composer require "laravel/framework:${{ steps.resolve.outputs.laravel }}" --no-update --no-interaction
+          composer update --prefer-stable --prefer-dist --no-interaction
+
+      - name: Run tests against latest Laravel
+        run: vendor/bin/phpunit --colors=always

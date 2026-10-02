@@ -9,6 +9,7 @@ use MohamedSamy902\LaravelMediaVault\Tests\TestCase;
 use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Verifies the correctness of all upload features and measures throughput.
@@ -31,7 +32,7 @@ class PerformanceTest extends TestCase
     // PERFORMANCE: Single file uploads
     // =========================================================
 
-    /** @test */
+    #[Test]
     public function perf_single_small_image_under_200ms(): void
     {
         $file  = UploadedFile::fake()->create('small.jpg', 50, 'image/jpeg');
@@ -47,7 +48,7 @@ class PerformanceTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function perf_single_large_file_1mb_under_500ms(): void
     {
         $file  = UploadedFile::fake()->create('large.pdf', 1024, 'application/pdf');
@@ -65,7 +66,7 @@ class PerformanceTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function perf_single_5mb_file_under_1000ms(): void
     {
         $file  = UploadedFile::fake()->create('video.mp4', 5120, 'video/mp4');
@@ -87,7 +88,7 @@ class PerformanceTest extends TestCase
     // PERFORMANCE: Batch uploads
     // =========================================================
 
-    /** @test */
+    #[Test]
     public function perf_batch_10_files_under_1500ms(): void
     {
         $files = [];
@@ -111,7 +112,7 @@ class PerformanceTest extends TestCase
         );
     }
 
-    /** @test */
+    #[Test]
     public function perf_batch_50_files_all_succeed(): void
     {
         $files = [];
@@ -138,7 +139,7 @@ class PerformanceTest extends TestCase
     // PERFORMANCE: Memory usage
     // =========================================================
 
-    /** @test */
+    #[Test]
     public function perf_memory_usage_stays_reasonable_for_batch(): void
     {
         $before = memory_get_usage(true);
@@ -166,7 +167,7 @@ class PerformanceTest extends TestCase
     // CORRECTNESS: UUID filenames
     // =========================================================
 
-    /** @test */
+    #[Test]
     public function correctness_every_upload_gets_unique_uuid_filename(): void
     {
         $paths = [];
@@ -193,7 +194,7 @@ class PerformanceTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function correctness_original_name_always_preserved(): void
     {
         $names = ['photo.jpg', 'document.pdf', 'video.mp4', 'audio.mp3', 'spreadsheet.xlsx'];
@@ -211,7 +212,7 @@ class PerformanceTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function correctness_file_type_detection_is_accurate(): void
     {
         $cases = [
@@ -234,7 +235,7 @@ class PerformanceTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function correctness_file_size_is_recorded_accurately(): void
     {
         // UploadedFile::fake() sizes are in KB
@@ -249,7 +250,7 @@ class PerformanceTest extends TestCase
         $this->assertGreaterThan(0, $result->size);
     }
 
-    /** @test */
+    #[Test]
     public function correctness_cdn_url_rewriting_is_applied_consistently(): void
     {
         $this->app['config']->set('media-vault.storage.cdn.enabled', true);
@@ -271,7 +272,7 @@ class PerformanceTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function correctness_upload_result_array_access_matches_properties(): void
     {
         $file   = UploadedFile::fake()->create('test.pdf', 50, 'application/pdf');
@@ -289,7 +290,7 @@ class PerformanceTest extends TestCase
         $this->assertEquals($result->size,         $result['size']);
     }
 
-    /** @test */
+    #[Test]
     public function correctness_custom_folder_path_is_correct(): void
     {
         $folders = ['images', 'documents', 'videos', 'users/123/avatars'];
@@ -308,7 +309,7 @@ class PerformanceTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function correctness_delete_removes_file_from_storage(): void
     {
         $this->app['config']->set('media-vault.database.enabled', false);

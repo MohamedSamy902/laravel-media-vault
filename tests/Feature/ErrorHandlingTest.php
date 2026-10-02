@@ -10,6 +10,7 @@ use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Verifies that every error path in the package produces a clear, non-empty
@@ -30,7 +31,7 @@ class ErrorHandlingTest extends TestCase
     // Validation Errors — Must have clear messages
     // =========================================================
 
-    /** @test */
+    #[Test]
     public function error_oversized_file_message_is_not_empty(): void
     {
         $this->app['config']->set('media-vault.validation.custom_fields.file', 'required|file|max:1');
@@ -45,7 +46,7 @@ class ErrorHandlingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function error_wrong_mime_type_message_mentions_validation(): void
     {
         $file = UploadedFile::fake()->create('virus.sh', 5, 'application/x-sh');
@@ -60,7 +61,7 @@ class ErrorHandlingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function error_invalid_file_in_batch_returns_error_array_not_exception(): void
     {
         $files = [
@@ -81,7 +82,7 @@ class ErrorHandlingTest extends TestCase
         $this->assertNotEmpty($results[1]['error']);
     }
 
-    /** @test */
+    #[Test]
     public function error_delete_nonexistent_file_throws_with_message(): void
     {
         $this->app['config']->set('media-vault.database.enabled', false);
@@ -95,7 +96,7 @@ class ErrorHandlingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function error_delete_requires_string_path_without_db(): void
     {
         $this->app['config']->set('media-vault.database.enabled', false);
@@ -109,7 +110,7 @@ class ErrorHandlingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function error_url_404_exception_message_contains_http_status(): void
     {
         Http::fake(['https://cdn.example.com/missing.jpg' => Http::response('', 404)]);
@@ -122,7 +123,7 @@ class ErrorHandlingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function error_url_blocked_mime_exception_mentions_mime(): void
     {
         Http::fake([
@@ -144,7 +145,7 @@ class ErrorHandlingTest extends TestCase
     // Edge Cases — Boundary Conditions
     // =========================================================
 
-    /** @test */
+    #[Test]
     public function edge_empty_filename_gets_uuid_fallback(): void
     {
         $file   = UploadedFile::fake()->create('', 50, 'application/pdf');
@@ -157,7 +158,7 @@ class ErrorHandlingTest extends TestCase
         Storage::disk('public')->assertExists($result->path);
     }
 
-    /** @test */
+    #[Test]
     public function edge_zero_byte_file_is_handled_gracefully(): void
     {
         $file = UploadedFile::fake()->create('empty.txt', 0, 'text/plain');
@@ -176,7 +177,7 @@ class ErrorHandlingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function edge_very_long_filename_is_handled(): void
     {
         $longName = str_repeat('a', 200) . '.pdf';
@@ -194,7 +195,7 @@ class ErrorHandlingTest extends TestCase
         Storage::disk('public')->assertExists($result->path);
     }
 
-    /** @test */
+    #[Test]
     public function edge_uploading_to_nested_custom_path(): void
     {
         $file   = UploadedFile::fake()->create('doc.pdf', 50, 'application/pdf');
@@ -208,7 +209,7 @@ class ErrorHandlingTest extends TestCase
         Storage::disk('public')->assertExists($result->path);
     }
 
-    /** @test */
+    #[Test]
     public function edge_null_folder_name_uses_base_path_only(): void
     {
         $this->app['config']->set('media-vault.storage.default_folder', null);
@@ -223,7 +224,7 @@ class ErrorHandlingTest extends TestCase
         $this->assertEquals(1, substr_count(trim($result->path, '/'), '/'));
     }
 
-    /** @test */
+    #[Test]
     public function edge_all_file_types_return_correct_type_field(): void
     {
         $cases = [
@@ -255,7 +256,7 @@ class ErrorHandlingTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function edge_batch_delete_partial_failure_returns_all_results(): void
     {
         $this->app['config']->set('media-vault.database.enabled', false);
@@ -279,7 +280,7 @@ class ErrorHandlingTest extends TestCase
         $this->assertTrue($results[2]['status']);
     }
 
-    /** @test */
+    #[Test]
     public function edge_url_with_query_string_is_handled(): void
     {
         Http::fake([
@@ -297,7 +298,7 @@ class ErrorHandlingTest extends TestCase
         Storage::disk('public')->assertExists($result->path);
     }
 
-    /** @test */
+    #[Test]
     public function edge_content_type_with_charset_param_is_stripped_correctly(): void
     {
         Http::fake([
@@ -315,7 +316,7 @@ class ErrorHandlingTest extends TestCase
         $this->assertTrue($result->status);
     }
 
-    /** @test */
+    #[Test]
     public function edge_upload_result_is_json_serializable(): void
     {
         $file   = UploadedFile::fake()->create('doc.pdf', 50, 'application/pdf');

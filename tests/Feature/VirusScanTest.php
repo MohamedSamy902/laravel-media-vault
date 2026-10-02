@@ -10,6 +10,7 @@ use MohamedSamy902\LaravelMediaVault\Security\VirusScanner;
 use MohamedSamy902\LaravelMediaVault\Services\MediaVaultService;
 use MohamedSamy902\LaravelMediaVault\Tests\TestCase;
 use RuntimeException;
+use PHPUnit\Framework\Attributes\Test;
 
 class VirusScanTest extends TestCase
 {
@@ -22,7 +23,7 @@ class VirusScanTest extends TestCase
         $this->service = $this->app->make(MediaVaultService::class);
     }
 
-    /** @test */
+    #[Test]
     public function virus_scan_rejects_file_with_eicar_signature(): void
     {
         $this->app['config']->set('media-vault.security.virus_scan.enabled', true);
@@ -47,7 +48,7 @@ class VirusScanTest extends TestCase
         }
     }
 
-    /** @test */
+    #[Test]
     public function virus_scan_closed_fail_mode_rejects_when_scanner_unavailable(): void
     {
         $this->app['config']->set('media-vault.security.virus_scan', [
@@ -65,7 +66,7 @@ class VirusScanTest extends TestCase
         $this->service->upload($file);
     }
 
-    /** @test */
+    #[Test]
     public function virus_scan_open_fail_mode_allows_upload_when_scanner_unavailable(): void
     {
         $this->app['config']->set('media-vault.security.virus_scan', [
@@ -83,7 +84,7 @@ class VirusScanTest extends TestCase
         Storage::disk('public')->assertExists($result->path);
     }
 
-    /** @test */
+    #[Test]
     public function virus_scan_skips_when_real_clamav_daemon_is_not_available(): void
     {
         $socket = config('media-vault.security.virus_scan.socket', 'tcp://127.0.0.1:3310');

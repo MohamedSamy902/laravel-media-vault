@@ -63,8 +63,15 @@ Unlike traditional Laravel media management packages (e.g., Spatie Media Library
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | PHP | `^8.2` | |
-| Laravel | `>=10.0` | |
+| Laravel | `>=10.0` | Open-ended: Composer accepts future Laravel majors without a constraint bump. |
 | Extensions | `ext-gd` or `ext-imagick` | Required for image processing |
+
+### Laravel forward compatibility
+
+- Runtime constraint is `laravel/framework: >=10.0` (not pinned to 10/11/12 only).
+- CI tests Laravel 10–13 on every PR, plus a **Latest stable Laravel** canary job that resolves Packagist automatically (no workflow edit required when a new major ships).
+- Public APIs used by the package stay on stable Laravel contracts/facades (`Storage`, `Cache`, `RateLimiter`, Eloquent, signed URLs, queues).
+- If a future Laravel major **removes** an API we rely on, a small compatibility patch may still be needed — the canary job is designed to surface that early. Day-to-day upgrades within supported majors should not require package changes on your app side.
 
 ---
 

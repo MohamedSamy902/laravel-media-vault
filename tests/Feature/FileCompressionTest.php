@@ -8,6 +8,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use MohamedSamy902\LaravelMediaVault\Services\MediaVaultService;
 use MohamedSamy902\LaravelMediaVault\Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class FileCompressionTest extends TestCase
 {
@@ -20,7 +21,7 @@ class FileCompressionTest extends TestCase
         $this->service = $this->app->make(MediaVaultService::class);
     }
 
-    /** @test */
+    #[Test]
     public function image_compression_reduces_file_size(): void
     {
         $this->app['config']->set('media-vault.compression', [
@@ -44,7 +45,7 @@ class FileCompressionTest extends TestCase
         $this->assertLessThan($originalSize, $compressedSize, 'Compressed image size must be smaller than original image size.');
     }
 
-    /** @test */
+    #[Test]
     public function compressed_image_remains_valid_and_readable(): void
     {
         $this->app['config']->set('media-vault.compression', [

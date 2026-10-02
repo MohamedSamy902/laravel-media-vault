@@ -7,6 +7,7 @@ namespace MohamedSamy902\LaravelMediaVault\Tests\Feature;
 use Illuminate\Support\Str;
 use MohamedSamy902\LaravelMediaVault\Models\UploadSession;
 use MohamedSamy902\LaravelMediaVault\Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class SessionStatusTest extends TestCase
 {
@@ -18,7 +19,7 @@ class SessionStatusTest extends TestCase
         $this->loadMigrationsFrom(__DIR__ . '/../../database/migrations');
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_session_status_and_received_chunks_for_valid_active_session(): void
     {
         $sessionId = Str::uuid()->toString();
@@ -53,7 +54,7 @@ class SessionStatusTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_404_for_non_existent_session(): void
     {
         $fakeSessionId = Str::uuid()->toString();
@@ -68,7 +69,7 @@ class SessionStatusTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function it_returns_404_for_expired_session(): void
     {
         $sessionId = Str::uuid()->toString();

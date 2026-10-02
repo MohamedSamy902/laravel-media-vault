@@ -13,12 +13,15 @@ All notable changes to this project will be documented in this file.
 - `MediaVault::temporaryUrl()` helper over Laravel disk temporary URLs / signed local routes.
 - `QuotaWarning` event; strict MIME magic-byte validation; ClamAV `socket` / `fail_mode` in published config.
 - Pivot/`tables` path discovery in `CustomMediaSource`.
+- CI canary job that auto-resolves the latest stable Laravel from Packagist.
 
 ### Changed
 - PHP requirement raised to `^8.2`.
 - Config hygiene: removed dead `logging` / legacy URL-download toggles; clarified compression as image quality override.
-- CI consolidated into a single workflow matrix (Laravel 10–13, PHP 8.2–8.4).
+- CI consolidated into a single workflow matrix (Laravel 10–13, PHP 8.2–8.4) with dynamic Testbench mapping.
 - Branding updated from “Advanced File Upload” to Laravel Media Vault.
+- PHPUnit tests migrated from `@test` docblocks to `#[Test]` attributes (PHPUnit 12 ready).
+- Dev constraints widened (`orchestra/testbench: >=8.0`, PHPUnit 10–12) for forward-compatible tooling.
 
 ## [v1.1.2] - 2026-09-07
 
