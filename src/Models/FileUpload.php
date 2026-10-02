@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
+use MohamedSamy902\LaravelMediaVault\Support\MediaUrl;
 
 /**
  * Represents a stored file record in the database.
@@ -38,8 +39,6 @@ class FileUpload extends Model
 {
     use SoftDeletes;
 
-    protected $table = 'file_uploads';
-
     protected $fillable = [
         'original_name',
         'name',
@@ -54,6 +53,43 @@ class FileUpload extends Model
         'is_used',
         'metadata',
     ];
+
+    public function getTable(): string
+    {
+        return (string) config('media-vault.database.table', 'file_uploads');
+    }
+
+    /**
+     * Mark this upload as used and optionally bind an owner.
+     */
+    public function markAsUsed(?\Illuminate\Database\Eloquent\Model $owner = null): self
+    {
+        $payload = ['is_used' => true];
+        if ($owner) {
+            $payload['model_type'] = $owner->getMorphClass();
+            $payload['model_id'] = $owner->getKey();
+        }
+
+        $this->forceFill($payload)->save();
+
+        return $this;
+    }
+
+    /**
+     * Mark this upload as unused.
+     */
+    public function markAsUnused(bool $clearOwnership = true): self
+    {
+        $payload = ['is_used' => false];
+        if ($clearOwnership) {
+            $payload['model_type'] = null;
+            $payload['model_id'] = null;
+        }
+
+        $this->forceFill($payload)->save();
+
+        return $this;
+    }
 
     /**
      * @var array<string, string>
@@ -113,18 +149,11 @@ class FileUpload extends Model
      */
     public function getUrlAttribute(): string
     {
-        $cdn = config('media-vault.storage.cdn', []);
-
-        /** @var \Illuminate\Filesystem\FilesystemAdapter $storageDisk */
-        $storageDisk = Storage::disk($this->disk);
-        $url = $storageDisk->url($this->path);
-
-        if (($cdn['enabled'] ?? false) && !empty($cdn['url'])) {
-            $relativePath = ltrim((string) parse_url($url, PHP_URL_PATH), '/');
-            return rtrim((string) $cdn['url'], '/') . '/' . $relativePath;
+        if ($this->trashed()) {
+            return '';
         }
 
-        return $url;
+        return MediaUrl::for((string) $this->disk, (string) $this->path);
     }
 
     /**

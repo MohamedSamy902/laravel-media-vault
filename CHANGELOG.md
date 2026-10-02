@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Unified trash / restore / hard-delete lifecycle with structured `.trash/` paths.
+- Dashboard stability: dynamic route prefix, bulk restore, scan status polling, thumbnail listing filters, optional `ui.require_auth`.
+- Usage tracking helpers: `HasUploads::attachUpload()` / `detachUpload()`, `MediaVault::markAsUsed()` / `markAsUnused()`.
+- Safer pruning: `media-vault:prune-unused` respects `database.prune_after`; new `media-vault:prune-trash`.
+- Queue jobs: `ScanOrphansJob`, `RegenerateThumbnailsJob`, `PruneTrashJob`.
+- `MediaVault::temporaryUrl()` helper over Laravel disk temporary URLs / signed local routes.
+- `QuotaWarning` event; strict MIME magic-byte validation; ClamAV `socket` / `fail_mode` in published config.
+- Pivot/`tables` path discovery in `CustomMediaSource`.
+- CI canary job that auto-resolves the latest stable Laravel from Packagist.
+- Shared `FileCategories` / `FileAuthorization` support helpers.
+- Chunked upload ceilings: `chunked.max_chunks` and `chunked.max_total_size`.
+
+### Changed
+- PHP requirement raised to `^8.2`.
+- Config hygiene: removed dead `logging` / legacy URL-download toggles; clarified compression as image quality override.
+- CI consolidated into a single workflow matrix (Laravel 10–13, PHP 8.2–8.4) with dynamic Testbench mapping.
+- Branding updated from “Advanced File Upload” to Laravel Media Vault.
+- PHPUnit tests migrated from `@test` docblocks to `#[Test]` attributes (PHPUnit 12 ready).
+- Dev constraints widened (`orchestra/testbench: >=8.0`, PHPUnit 10–12) for forward-compatible tooling.
+- Quota checks serialize per-owner via cache lock to reduce TOCTOU races on concurrent uploads.
+- Dashboard controller delegates ownership checks to `FileAuthorization`; file-type helpers centralized in `FileCategories`.
+
 ## [v1.1.2] - 2026-09-07
 
 ### Fixed

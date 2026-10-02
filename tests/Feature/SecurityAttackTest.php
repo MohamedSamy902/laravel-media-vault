@@ -12,6 +12,7 @@ use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use PHPUnit\Framework\Attributes\Test;
 
 /**
  * Simulates real-world attack scenarios against the package.
@@ -38,42 +39,42 @@ class SecurityAttackTest extends TestCase
     // SSRF: Private IP address ranges
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_localhost_127_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
         $this->ssrfService->upload([], ['url' => 'http://127.0.0.1/admin']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_private_10_network_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
         $this->ssrfService->upload([], ['url' => 'http://10.0.0.1/internal']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_aws_metadata_endpoint_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
         $this->ssrfService->upload([], ['url' => 'http://169.254.169.254/latest/meta-data/iam/security-credentials/']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_192_168_private_range_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
         $this->ssrfService->upload([], ['url' => 'http://192.168.1.1/']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_172_16_private_range_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
         $this->ssrfService->upload([], ['url' => 'http://172.16.0.1/secret']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_ipv6_loopback_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
@@ -84,28 +85,28 @@ class SecurityAttackTest extends TestCase
     // SSRF: Disallowed URL schemes
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_file_scheme_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
         $this->ssrfService->upload([], ['url' => 'file:///etc/passwd']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_ftp_scheme_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
         $this->ssrfService->upload([], ['url' => 'ftp://evil.com/malware.zip']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_gopher_scheme_is_blocked(): void
     {
         $this->expectException(SsrfException::class);
         $this->ssrfService->upload([], ['url' => 'gopher://evil.com/0_GET%20/admin%20HTTP/1.0']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_data_uri_is_blocked(): void
     {
         // Use hex encoding for the XSS payload to evade static scanners
@@ -114,7 +115,7 @@ class SecurityAttackTest extends TestCase
         $this->ssrfService->upload([], ['url' => 'data:text/html,' . $xss]);
     }
 
-    /** @test */
+    #[Test]
     public function attack_ssrf_domain_not_in_allowlist_is_blocked(): void
     {
         $this->app['config']->set('media-vault.url_upload.allowed_domains', ['cdn.myapp.com']);
@@ -128,7 +129,7 @@ class SecurityAttackTest extends TestCase
     // Malicious file types disguised as legitimate uploads
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function attack_php_script_disguised_as_image_is_rejected(): void
     {
         $this->expectException(\Exception::class);
@@ -141,7 +142,7 @@ class SecurityAttackTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function attack_php_script_is_stored_safely_without_php_extension(): void
     {
         // Even if the file has a safe mime type and passes validation,
@@ -158,7 +159,7 @@ class SecurityAttackTest extends TestCase
         $this->assertStringContainsString('.txt', $result->path);
     }
 
-    /** @test */
+    #[Test]
     public function attack_executable_disguised_as_pdf_is_rejected(): void
     {
         $this->expectException(\Exception::class);
@@ -171,7 +172,7 @@ class SecurityAttackTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function attack_shell_script_upload_is_rejected(): void
     {
         $this->expectException(\Exception::class);
@@ -184,7 +185,7 @@ class SecurityAttackTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function attack_url_upload_with_php_mime_is_blocked(): void
     {
         $this->expectException(\Exception::class);
@@ -204,7 +205,7 @@ class SecurityAttackTest extends TestCase
     // Oversized files (denial-of-service vectors)
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function attack_oversized_file_upload_is_rejected(): void
     {
         $this->expectException(\Exception::class);
@@ -214,7 +215,7 @@ class SecurityAttackTest extends TestCase
         $this->service->upload($file);
     }
 
-    /** @test */
+    #[Test]
     public function attack_oversized_svg_is_rejected_before_parsing(): void
     {
         $this->expectException(\Exception::class);
@@ -227,7 +228,7 @@ class SecurityAttackTest extends TestCase
         ]);
     }
 
-    /** @test */
+    #[Test]
     public function attack_oversized_url_download_is_rejected(): void
     {
         $this->expectException(\Exception::class);
@@ -247,28 +248,28 @@ class SecurityAttackTest extends TestCase
     // Invalid / corrupt input handling
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function attack_string_instead_of_file_throws_clearly(): void
     {
         $this->expectException(\Exception::class);
         $this->service->upload('i-am-not-a-file-object');
     }
 
-    /** @test */
+    #[Test]
     public function attack_null_upload_throws_clearly(): void
     {
         $this->expectException(\Exception::class);
         $this->service->upload(null);
     }
 
-    /** @test */
+    #[Test]
     public function attack_integer_upload_throws_clearly(): void
     {
         $this->expectException(\Exception::class);
         $this->service->upload(99999);
     }
 
-    /** @test */
+    #[Test]
     public function attack_array_with_mixed_bad_entries_returns_errors_not_crash(): void
     {
         $files = [
@@ -287,7 +288,7 @@ class SecurityAttackTest extends TestCase
         $this->assertArrayHasKey('error', $results[1]);
     }
 
-    /** @test */
+    #[Test]
     public function attack_delete_nonexistent_path_throws_clearly(): void
     {
         $this->expectException(\Exception::class);
@@ -295,7 +296,7 @@ class SecurityAttackTest extends TestCase
         $this->service->delete('uploads/does/not/exist/file.pdf');
     }
 
-    /** @test */
+    #[Test]
     public function attack_numeric_delete_without_db_throws_clear_message(): void
     {
         $this->app['config']->set('media-vault.database.enabled', false);
@@ -312,7 +313,7 @@ class SecurityAttackTest extends TestCase
     // URL download: HTTP error code handling
     // -------------------------------------------------------------------------
 
-    /** @test */
+    #[Test]
     public function attack_url_returns_403_is_handled_gracefully(): void
     {
         $this->expectException(\Exception::class);
@@ -321,7 +322,7 @@ class SecurityAttackTest extends TestCase
         $this->service->upload([], ['url' => 'https://cdn.example.com/secret.jpg']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_url_returns_500_is_handled_gracefully(): void
     {
         $this->expectException(\Exception::class);
@@ -330,7 +331,7 @@ class SecurityAttackTest extends TestCase
         $this->service->upload([], ['url' => 'https://cdn.example.com/broken.jpg']);
     }
 
-    /** @test */
+    #[Test]
     public function attack_multiple_url_partial_failure_does_not_crash_batch(): void
     {
         Http::fake([

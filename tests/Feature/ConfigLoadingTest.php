@@ -21,12 +21,27 @@ class ConfigLoadingTest extends TestCase
             'database',
             'security',
             'chunked',
+            'chunking',
             'temp_url',
             'compression',
-            'logging',
-            'ui.route_prefix',
-            'ui.middleware',
+            'ui',
+            'quota',
+            'url_upload',
+            'url_download',
         ];
+
+        foreach ($expectedKeys as $key) {
+            $this->assertArrayHasKey($key, $config, "Missing config key [{$key}]");
+        }
+
+        $this->assertArrayHasKey('socket', $config['security']['virus_scan']);
+        $this->assertArrayHasKey('fail_mode', $config['security']['virus_scan']);
+        $this->assertArrayHasKey('require_auth', $config['ui']);
+        $this->assertArrayHasKey('enabled', $config['temp_url']);
+        $this->assertArrayHasKey('max_chunks', $config['chunked']);
+        $this->assertArrayHasKey('max_total_size', $config['chunked']);
+        $this->assertSame(10000, $config['chunked']['max_chunks']);
+        $this->assertSame(5368709120, $config['chunked']['max_total_size']);
         
         $this->assertArrayHasKey('security', $config);
         $this->assertArrayHasKey('bulk_delete_warning_threshold', $config['security']);

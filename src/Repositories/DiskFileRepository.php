@@ -9,13 +9,22 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use MohamedSamy902\LaravelMediaVault\Contracts\FileRepositoryContract;
 use MohamedSamy902\LaravelMediaVault\DTOs\FileDto;
+use MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent;
+use MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent;
 use MohamedSamy902\LaravelMediaVault\Services\FileUsageScanner;
-use Symfony\Component\Finder\SplFileInfo;
+use MohamedSamy902\LaravelMediaVault\Services\TrashManager;
+use MohamedSamy902\LaravelMediaVault\Support\FileCategories;
+use MohamedSamy902\LaravelMediaVault\Support\MediaUrl;
+use MohamedSamy902\LaravelMediaVault\Support\StreamHash;
+use MohamedSamy902\LaravelMediaVault\Support\ThumbnailPath;
+use MohamedSamy902\LaravelMediaVault\Support\TrashPath;
 
 class DiskFileRepository implements FileRepositoryContract
 {
-    public function __construct(protected FileUsageScanner $scanner)
-    {
+    public function __construct(
+        protected FileUsageScanner $scanner,
+        protected TrashManager $trashManager,
+    ) {
     }
 
     /**
@@ -25,6 +34,7 @@ class DiskFileRepository implements FileRepositoryContract
     {
         /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
         $disk = Storage::disk(config('media-vault.storage.disk', 'public'));
+
         return $disk;
     }
 
@@ -49,43 +59,48 @@ class DiskFileRepository implements FileRepositoryContract
     public function getFilteredFiles(array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
         $disk = $this->getDisk();
-        $files = $disk->allFiles($this->getBasePath());
-        
-        if (!empty($filters['filter']) && $filters['filter'] !== 'all') {
-            $filter = $filters['filter'];
-            if ($filter === 'deleted') {
-                $files = array_filter($files, fn($path) => str_contains($path, '.trash/'));
-            } else {
-                $files = array_filter($files, fn($path) => !str_contains($path, '.trash/'));
-                if ($filter === 'images') {
-                    $files = array_filter($files, fn($p) => str_starts_with((string)$disk->mimeType($p), 'image/'));
-                } elseif ($filter === 'videos') {
-                    $files = array_filter($files, fn($p) => str_starts_with((string)$disk->mimeType($p), 'video/'));
-                } elseif ($filter === 'documents') {
-                    $files = array_filter($files, fn($p) => str_contains((string)$disk->mimeType($p), 'pdf') || str_contains((string)$disk->mimeType($p), 'word'));
-                } elseif ($filter === 'used') {
-                    $orphans = Cache::get('media-vault:orphans', []);
-                    $orphansMap = array_flip((array) $orphans);
-                    $files = array_filter($files, fn($p) => !isset($orphansMap[$p]));
-                }
-            }
+        $files = $this->cachedListing();
+        $filter = $filters['filter'] ?? 'all';
+
+        if ($filter === 'deleted') {
+            $files = array_values(array_filter($files, fn ($path) => TrashPath::isTrashed($path)));
         } else {
-            // Default: All active files
-            $files = array_filter($files, fn($path) => !str_contains($path, '.trash/'));
+            // Active library never includes trash.
+            $files = array_values(array_filter($files, fn ($path) => !TrashPath::isTrashed($path)));
+
+            if ($filter === 'images') {
+                $files = array_values(array_filter($files, fn ($p) => FileCategories::isImagePath($p)));
+            } elseif ($filter === 'videos') {
+                $files = array_values(array_filter($files, fn ($p) => FileCategories::isVideoPath($p)));
+            } elseif ($filter === 'documents') {
+                $files = array_values(array_filter($files, fn ($p) => FileCategories::isDocumentPath($p)));
+            } elseif ($filter === 'used') {
+                $orphans = Cache::get('media-vault:orphans', []);
+                $orphansMap = array_flip((array) $orphans);
+                $files = array_values(array_filter($files, fn ($p) => !isset($orphansMap[$p])));
+            }
+
+            $files = array_values(array_filter($files, fn ($p) => !ThumbnailPath::isThumbnail($p)));
         }
 
         $currentPage = (int) request()->input('page', 1);
         $offset = ($currentPage - 1) * $perPage;
-        
         $items = array_slice($files, $offset, $perPage);
 
-        // Try to get orphans from cache to accurately mark isUsed on the 'All' tab
         $orphans = Cache::get('media-vault:orphans', []);
         $orphansMap = array_flip((array) $orphans);
 
-        $dtos = array_map(function($path) use ($orphansMap) {
+        $dtos = array_map(function ($path) use ($orphansMap, $filter) {
             $isUsed = !isset($orphansMap[$path]);
-            return $this->toDto($path, $isUsed);
+            $logical = $filter === 'deleted' ? TrashPath::fromTrash($path) : $path;
+            $isTrashed = $filter === 'deleted' || TrashPath::isTrashed($path);
+
+            return $this->toDto(
+                path: $filter === 'deleted' ? $path : $logical,
+                isUsed: $isUsed,
+                logicalPath: $logical,
+                isTrashed: $isTrashed,
+            );
         }, $items);
 
         return new LengthAwarePaginator(
@@ -99,61 +114,48 @@ class DiskFileRepository implements FileRepositoryContract
 
     public function delete(string $path, bool $force = false): bool
     {
+        $diskName = (string) config('media-vault.storage.disk', 'public');
+        $logical = TrashPath::isTrashed($path) ? TrashPath::fromTrash($path) : TrashPath::normalize($path);
         $disk = $this->getDisk();
-        if (!$disk->exists($path)) {
+
+        if ($force) {
+            if (!$this->trashManager->existsAnywhere($diskName, $logical) && !$disk->exists($path)) {
+                return false;
+            }
+
+            $this->trashManager->purge($diskName, $logical);
+            event(new FileDeletedEvent($logical, true));
+
+            return true;
+        }
+
+        // Soft delete — move active file into structured .trash/ path.
+        if (!$disk->exists($logical) && !$disk->exists(TrashPath::toTrash($logical))) {
             return false;
         }
 
-        if ($force) {
-            $deleted = $disk->delete($path);
-            if ($deleted) {
-                event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($path, true));
-            }
-            return $deleted;
+        if ($disk->exists(TrashPath::toTrash($logical)) && !$disk->exists($logical)) {
+            return true; // already trashed
         }
 
-        // Soft delete -> move to trash
-        $trashPath = $this->getBasePath() . '/.trash/' . basename($path);
-        
-        // Ensure trash dir exists
-        if (!$disk->exists(dirname($trashPath))) {
-            $disk->makeDirectory(dirname($trashPath));
-        }
-
-        $moved = $disk->move($path, $trashPath);
+        $moved = $this->trashManager->moveToTrash($diskName, $logical);
         if ($moved) {
-            event(new \MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent($path, false));
+            event(new FileDeletedEvent($logical, false));
         }
+
         return $moved;
     }
 
     public function restore(string $path): bool
     {
-        $disk = $this->getDisk();
+        $diskName = (string) config('media-vault.storage.disk', 'public');
+        $logical = TrashPath::isTrashed($path) ? TrashPath::fromTrash($path) : TrashPath::normalize($path);
 
-        // If the provided path is already a trash path, we deduce the target path
-        if (str_contains($path, '.trash/')) {
-            $trashPath = $path;
-            $targetPath = $this->getBasePath() . '/' . config('media-vault.storage.default_folder', 'default') . '/' . basename($path);
-        } else {
-            // Otherwise it expects the original path
-            $trashPath = $this->getBasePath() . '/.trash/' . basename($path);
-            $targetPath = $path;
-        }
-
-        if (!$disk->exists($trashPath)) {
-            return false;
-        }
-
-        // Ensure target directory exists
-        if (!$disk->exists(dirname($targetPath))) {
-            $disk->makeDirectory(dirname($targetPath));
-        }
-
-        $restored = $disk->move($trashPath, $targetPath);
+        $restored = $this->trashManager->restoreFromTrash($diskName, $logical);
         if ($restored) {
-            event(new \MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent($targetPath));
+            event(new FileRestoredEvent($logical));
         }
+
         return $restored;
     }
 
@@ -162,18 +164,19 @@ class DiskFileRepository implements FileRepositoryContract
      */
     public function getOrphanedFiles(int $perPage = 20): LengthAwarePaginator
     {
-        // Ideally this comes from Cache populated by an Artisan command.
         $orphanedPaths = Cache::remember('media-vault:orphans', 3600, function () {
             $usedPathsMap = [];
             foreach ($this->scanner->getAllUsedPaths() as $path) {
                 $usedPathsMap[$path] = true;
             }
-            
-            $allFiles = $this->getDisk()->allFiles($this->getBasePath());
-            
+
+            $allFiles = $this->cachedListing();
             $orphans = [];
             foreach ($allFiles as $path) {
-                if (!str_contains($path, '.trash/') && !isset($usedPathsMap[$path])) {
+                if (TrashPath::isTrashed($path)) {
+                    continue;
+                }
+                if (!isset($usedPathsMap[$path])) {
                     $orphans[] = $path;
                 }
             }
@@ -183,9 +186,8 @@ class DiskFileRepository implements FileRepositoryContract
 
         $currentPage = (int) request()->input('page', 1);
         $offset = ($currentPage - 1) * $perPage;
-        
         $items = array_slice($orphanedPaths, $offset, $perPage);
-        $dtos = array_map(fn($path) => $this->toDto($path, false), $items);
+        $dtos = array_map(fn ($path) => $this->toDto($path, false), $items);
 
         return new LengthAwarePaginator(
             $dtos,
@@ -203,30 +205,33 @@ class DiskFileRepository implements FileRepositoryContract
     {
         return Cache::remember('media-vault:duplicates', 3600, function () {
             $disk = $this->getDisk();
-            $allFiles = $disk->allFiles($this->getBasePath());
-            
-            // 1. Group by size first (Smart Detection)
+            $allFiles = $this->cachedListing();
+            $diskName = (string) config('media-vault.storage.disk', 'public');
+
             $sizeGroups = [];
             foreach ($allFiles as $path) {
-                if (str_contains($path, '.trash/')) continue;
+                if (TrashPath::isTrashed($path) || ThumbnailPath::isThumbnail($path)) {
+                    continue;
+                }
                 $size = $disk->size($path);
                 $sizeGroups[$size][] = $path;
             }
 
-            // 2. Hash only files that share the exact same size
             $duplicates = [];
-            foreach ($sizeGroups as $size => $paths) {
-                if (count($paths) > 1) {
-                    $hashGroups = [];
-                    foreach ($paths as $path) {
-                        $hash = md5((string) $disk->get($path));
-                        $hashGroups[$hash][] = $path;
-                    }
-                    
-                    foreach ($hashGroups as $hash => $hashPaths) {
-                        if (count($hashPaths) > 1) {
-                            $duplicates[$hash] = array_map(fn($p) => $this->toDto($p, true), $hashPaths);
-                        }
+            foreach ($sizeGroups as $paths) {
+                if (count($paths) <= 1) {
+                    continue;
+                }
+
+                $hashGroups = [];
+                foreach ($paths as $path) {
+                    $hash = StreamHash::md5($diskName, $path);
+                    $hashGroups[$hash][] = $path;
+                }
+
+                foreach ($hashGroups as $hash => $hashPaths) {
+                    if (count($hashPaths) > 1) {
+                        $duplicates[$hash] = array_map(fn ($p) => $this->toDto($p, true), $hashPaths);
                     }
                 }
             }
@@ -241,77 +246,115 @@ class DiskFileRepository implements FileRepositoryContract
      */
     public function getStats(array $filters = []): array
     {
-        $disk = $this->getDisk();
-        $files = $disk->allFiles($this->getBasePath());
-        
-        $totalSize = 0;
-        $images = 0;
-        $videos = 0;
-        $documents = 0;
-        $other = 0;
+        return Cache::remember('media-vault:disk-stats', 60, function () {
+            $disk = $this->getDisk();
+            $files = $this->cachedListing();
 
-        foreach ($files as $path) {
-            if (str_contains($path, '.trash/')) continue;
-            
-            $totalSize += $disk->size($path);
-            $mime = $disk->mimeType($path);
+            $totalSize = 0;
+            $images = 0;
+            $videos = 0;
+            $documents = 0;
+            $other = 0;
+            $activeCount = 0;
+            $trashedCount = 0;
 
-            if (str_starts_with((string)$mime, 'image/')) {
-                $images++;
-            } elseif (str_starts_with((string)$mime, 'video/')) {
-                $videos++;
-            } elseif (str_contains((string)$mime, 'pdf') || str_contains((string)$mime, 'word')) {
-                $documents++;
-            } else {
-                $other++;
+            foreach ($files as $path) {
+                if (TrashPath::isTrashed($path)) {
+                    $trashedCount++;
+                    continue;
+                }
+
+                if (ThumbnailPath::isThumbnail($path)) {
+                    continue;
+                }
+
+                $activeCount++;
+                $totalSize += $disk->size($path);
+
+                if (FileCategories::isImagePath($path)) {
+                    $images++;
+                } elseif (FileCategories::isVideoPath($path)) {
+                    $videos++;
+                } elseif (FileCategories::isDocumentPath($path)) {
+                    $documents++;
+                } else {
+                    $other++;
+                }
             }
-        }
 
-        // Ideally orphans count is read from Cache, otherwise we just return 0 to avoid scanning on dashboard load
-        $orphansCount = count(Cache::get('media-vault:orphans', []));
-        $totalFiles = count($files);
+            $orphansCount = count(Cache::get('media-vault:orphans', []));
 
-        return [
-            'total_files' => $totalFiles,
-            'total_size' => $totalSize,
-            'used_files' => $totalFiles - $orphansCount,
-            'unused_files' => $orphansCount,
-            'images' => $images,
-            'videos' => $videos,
-            'documents' => $documents,
-            'other' => $other,
-        ];
+            return [
+                'total_files' => $activeCount,
+                'total_size' => $totalSize,
+                'used_files' => max(0, $activeCount - $orphansCount),
+                'unused_files' => $orphansCount,
+                'trashed_files' => $trashedCount,
+                'images' => $images,
+                'videos' => $videos,
+                'documents' => $documents,
+                'other' => $other,
+            ];
+        });
     }
 
-    protected function toDto(string $path, bool $isUsed = true): FileDto
-    {
+    protected function toDto(
+        string $path,
+        bool $isUsed = true,
+        ?string $logicalPath = null,
+        ?bool $isTrashed = null,
+    ): FileDto {
         $disk = $this->getDisk();
-        
-        if (!$disk->exists($path)) {
+        $trashed = $isTrashed ?? TrashPath::isTrashed($path);
+        $logical = $logicalPath ?? ($trashed ? TrashPath::fromTrash($path) : TrashPath::normalize($path));
+        $physical = TrashPath::physical($logical, $trashed);
+
+        if (!$disk->exists($physical)) {
             return new FileDto(
-                path: $path,
-                name: basename($path),
+                path: $logical,
+                name: basename($logical),
                 mimeType: 'unknown',
                 size: 0,
                 lastModified: now()->toIso8601String(),
                 isUsed: $isUsed,
                 url: null,
                 disk: config('media-vault.storage.disk', 'public'),
-                encoded_path: null,
                 disk_exists: false,
-                is_missing: true
+                is_missing: true,
+                isTrashed: $trashed,
             );
         }
 
         return new FileDto(
-            path: $path,
-            name: basename($path),
-            mimeType: $disk->mimeType($path) ?: 'application/octet-stream',
-            size: $disk->size($path),
-            lastModified: date('c', $disk->lastModified($path)),
+            path: $logical,
+            name: basename($logical),
+            mimeType: $disk->mimeType($physical) ?: 'application/octet-stream',
+            size: $disk->size($physical),
+            lastModified: date('c', $disk->lastModified($physical)),
             isUsed: $isUsed,
-            url: $disk->url($path),
-            disk: config('media-vault.storage.disk', 'public')
+            url: MediaUrl::forMaybeTrashed((string) config('media-vault.storage.disk', 'public'), $physical, $trashed),
+            disk: config('media-vault.storage.disk', 'public'),
+            disk_exists: true,
+            is_missing: false,
+            isTrashed: $trashed,
         );
     }
+
+    /**
+     * @return list<string>
+     */
+    protected function cachedListing(): array
+    {
+        $diskName = (string) config('media-vault.storage.disk', 'public');
+        $base = $this->getBasePath();
+        $key = "media-vault:disk-listing:{$diskName}:" . md5($base);
+
+        /** @var list<string> $files */
+        $files = Cache::remember($key, 60, function () {
+            return $this->getDisk()->allFiles($this->getBasePath());
+        });
+
+        return $files;
+    }
+
 }

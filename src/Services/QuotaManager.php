@@ -1,48 +1,54 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Services;
 
+use Illuminate\Support\Facades\Cache;
 use MohamedSamy902\LaravelMediaVault\Contracts\QuotaManagerContract;
 use MohamedSamy902\LaravelMediaVault\Exceptions\QuotaExceededException;
 use MohamedSamy902\LaravelMediaVault\ValueObjects\QuotaInfo;
+use RuntimeException;
 
 /**
  * Manages per-user (or per-tenant) storage quotas backed by the database.
  *
- * The key column is configurable via 'media-vault.quota.key_column',
- * defaulting to 'user_id'. For multi-tenant apps set it to 'tenant_id'.
+ * Concurrent checks are serialized with a per-owner cache lock to reduce TOCTOU races.
  */
 final class QuotaManager implements QuotaManagerContract
 {
     #[\Override]
     public function check(int $userId, int $bytes): void
     {
-        $info = $this->usage($userId);
+        $this->withOwnerLock($userId, function () use ($userId, $bytes): void {
+            $info = $this->usage($userId);
 
-        if (($info->used + $bytes) > $info->limit) {
-            $maxMB = round($info->limit / (1024 * 1024), 2);
-            throw new QuotaExceededException(
-                "Storage quota exceeded for user [{$userId}]. Maximum allowed: {$maxMB}MB."
-            );
-        }
+            $projected = $info->limit > 0 ? ($info->used + $bytes) / $info->limit : 0.0;
+            $threshold = (float) (config('media-vault.quota.warning_threshold') ?? 0.9);
+            if ($info->limit > 0 && $projected >= $threshold && ($info->used + $bytes) <= $info->limit) {
+                \MohamedSamy902\LaravelMediaVault\Events\QuotaWarning::dispatch(
+                    $userId,
+                    $info->used + $bytes,
+                    $info->limit,
+                    round($projected, 4),
+                );
+            }
+
+            if (($info->used + $bytes) > $info->limit) {
+                $maxMB = round($info->limit / (1024 * 1024), 2);
+                throw new QuotaExceededException(
+                    "Storage quota exceeded for user [{$userId}]. Maximum allowed: {$maxMB}MB."
+                );
+            }
+        });
     }
 
-    /**
-     * QuotaManager works through the DB model — consumption is implicit
-     * via file record creation. This method is a no-op hook for
-     * implementations that use a separate quota table.
-     */
     #[\Override]
     public function consume(int $userId, int $bytes): void
     {
         // No-op in the default database implementation.
-        // The quota is calculated live from file_uploads.size sum.
     }
 
-    /**
-     * Release is a no-op in the default implementation because quota is
-     * recalculated live. Override this if you cache quota elsewhere.
-     */
     #[\Override]
     public function release(int $userId, int $bytes): void
     {
@@ -64,8 +70,13 @@ final class QuotaManager implements QuotaManagerContract
         $keyColumn  = $config['key_column'] ?? 'user_id';
         $modelClass = config('media-vault.database.model');
 
-        // ✅ Fixed: if DB tracking is disabled, return zero usage instead of crashing
         if (!config('media-vault.database.enabled', false)) {
+            if (config('media-vault.quota.enabled', false)) {
+                throw new QuotaExceededException(
+                    'Quota enforcement requires media-vault.database.enabled=true.'
+                );
+            }
+
             return new QuotaInfo(used: 0, limit: $limit, remaining: $limit, percentage: 0.0);
         }
 
@@ -83,7 +94,30 @@ final class QuotaManager implements QuotaManagerContract
 
     public function hasAvailableSpace(int|string $userId, int $bytes): bool
     {
-        $info = $this->usage((int) $userId);
-        return ($info->used + $bytes) <= $info->limit;
+        try {
+            $this->check((int) $userId, $bytes);
+            return true;
+        } catch (QuotaExceededException) {
+            return false;
+        }
+    }
+
+    /**
+     * @template T
+     * @param callable(): T $callback
+     * @return T
+     */
+    private function withOwnerLock(int $userId, callable $callback): mixed
+    {
+        $lock = Cache::lock("media-vault:quota:{$userId}", 15);
+
+        try {
+            $lock->block(10);
+            return $callback();
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            throw new RuntimeException('Could not acquire quota lock. Please retry the upload.');
+        } finally {
+            $lock->release();
+        }
     }
 }

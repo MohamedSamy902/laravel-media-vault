@@ -10,7 +10,7 @@ use RuntimeException;
 /**
  * Scans uploaded files for viruses and malware using ClamAV.
  *
- * Supports ClamAV daemon (TCP socket `tcp://127.0.0.1:3310` or Unix socket `unix:///var/run/clamav/clamd.ctl`)
+ * Supports ClamAV daemon (TCP/Unix) via INSTREAM (preferred) with SCAN fallback,
  * as well as `clamscan` CLI process execution.
  */
 class VirusScanner
@@ -39,7 +39,6 @@ class VirusScanner
             throw new RuntimeException("Cannot scan file: File does not exist or is unreadable at [{$filePath}].");
         }
 
-        // Fast check for EICAR test string signature in test/dev environments
         if ($this->containsEicarSignature($filePath)) {
             Log::warning("Infected file detected during scan: [{$filePath}]. Virus: EICAR-Test-File");
             throw new RuntimeException('Uploaded file failed security scan and was rejected.');
@@ -52,7 +51,6 @@ class VirusScanner
         try {
             $isInfected = $this->scanViaSocket($filePath, $socket);
             if ($isInfected === null) {
-                // Socket connection failed, try CLI fallback if binary exists
                 if (file_exists($cliPath) && is_executable($cliPath)) {
                     $isInfected = $this->scanViaCli($filePath, $cliPath);
                 } else {
@@ -65,7 +63,6 @@ class VirusScanner
                 throw new RuntimeException('Uploaded file failed security scan and was rejected.');
             }
         } catch (RuntimeException $e) {
-            // Re-throw if it's our virus detection exception
             if ($e->getMessage() === 'Uploaded file failed security scan and was rejected.') {
                 throw $e;
             }
@@ -79,12 +76,8 @@ class VirusScanner
         }
     }
 
-    /**
-     * Checks if the file contains the EICAR antivirus test signature string.
-     */
     private function containsEicarSignature(string $filePath): bool
     {
-        // Avoid reading huge files into memory for EICAR check
         if (filesize($filePath) > 10 * 1024 * 1024) {
             return false;
         }
@@ -94,26 +87,22 @@ class VirusScanner
     }
 
     /**
-     * Scans a file via ClamAV clamd socket (TCP or Unix socket).
-     *
      * @return bool|null true if infected, false if clean, null if socket connection failed
      */
     private function scanViaSocket(string $filePath, string $socketUrl): ?bool
     {
-        $errno = 0;
-        $errstr = '';
+        $instream = $this->withSocket($socketUrl, function ($fp) use ($filePath) {
+            return $this->scanViaInstream($fp, $filePath);
+        });
 
-        $fp = @stream_socket_client($socketUrl, $errno, $errstr, 3);
-        if (!$fp) {
-            return null;
+        if ($instream !== null) {
+            return $instream;
         }
 
-        try {
-            // Use SCAN command for local paths or INSTREAM for streamed chunks
+        return $this->withSocket($socketUrl, function ($fp) use ($filePath) {
             $realPath = (string) realpath($filePath);
             fwrite($fp, "SCAN {$realPath}\n");
             $response = fgets($fp, 4096);
-            fclose($fp);
 
             if ($response === false) {
                 return null;
@@ -128,19 +117,77 @@ class VirusScanner
             }
 
             return null;
-        } catch (\Throwable $e) {
+        });
+    }
+
+    /**
+     * @param callable(resource): (?bool) $callback
+     */
+    private function withSocket(string $socketUrl, callable $callback): ?bool
+    {
+        $errno = 0;
+        $errstr = '';
+        $fp = @stream_socket_client($socketUrl, $errno, $errstr, 3);
+        if (!$fp) {
+            return null;
+        }
+
+        try {
+            return $callback($fp);
+        } catch (\Throwable) {
+            return null;
+        } finally {
             if (is_resource($fp)) {
                 fclose($fp);
             }
-            return null;
         }
     }
 
     /**
-     * Scans a file via clamscan CLI binary.
+     * Stream file bytes to clamd using the INSTREAM protocol.
      *
-     * @return bool true if infected, false if clean
+     * @param resource $fp
      */
+    private function scanViaInstream($fp, string $filePath): ?bool
+    {
+        $handle = fopen($filePath, 'rb');
+        if ($handle === false) {
+            return null;
+        }
+
+        try {
+            fwrite($fp, "zINSTREAM\0");
+
+            while (!feof($handle)) {
+                $chunk = fread($handle, 8192);
+                if ($chunk === false || $chunk === '') {
+                    break;
+                }
+                fwrite($fp, pack('N', strlen($chunk)) . $chunk);
+            }
+
+            // End of stream
+            fwrite($fp, pack('N', 0));
+            $response = stream_get_contents($fp);
+
+            if ($response === false || $response === '') {
+                return null;
+            }
+
+            if (str_contains($response, 'FOUND')) {
+                return true;
+            }
+
+            if (str_contains($response, 'OK')) {
+                return false;
+            }
+
+            return null;
+        } finally {
+            fclose($handle);
+        }
+    }
+
     private function scanViaCli(string $filePath, string $cliPath): bool
     {
         $cmd = escapeshellcmd($cliPath) . ' --no-summary ' . escapeshellarg($filePath);
@@ -148,7 +195,6 @@ class VirusScanner
         $returnCode = 0;
         exec($cmd, $output, $returnCode);
 
-        // Exit code 1 means infected file found
         return $returnCode === 1;
     }
 }

@@ -35,6 +35,11 @@ class ScanFilesCommand extends Command
         }
 
         $this->info('Starting background file scan...');
+
+        app('cache')->put('media-vault:scan-status', [
+            'state' => 'running',
+            'started_at' => now()->toIso8601String(),
+        ], 3600);
         
         // Clearing cache to force the repository to recompute
         app('cache')->forget('media-vault:orphans');
@@ -47,6 +52,17 @@ class ScanFilesCommand extends Command
 
         $this->info('Scanning for duplicates (grouping by size first)...');
         $duplicates = $repository->getDuplicateFiles();
+
+        $orphanList = app('cache')->get('media-vault:orphans', []);
+        $orphanCount = is_array($orphanList)
+            ? count($orphanList)
+            : (int) app('cache')->get('media-vault:orphans_count', 0);
+
+        app('cache')->put('media-vault:scan-status', [
+            'state' => 'complete',
+            'orphaned_count' => $orphanCount,
+            'completed_at' => now()->toIso8601String(),
+        ], 3600);
 
         $this->info('Scan complete! The UI cache has been updated.');
         return 0;

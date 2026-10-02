@@ -114,7 +114,7 @@ class MultiSourceFileRepository implements FileRepositoryContract
             }
         }
 
-        $disks = config('filesystems.disks', []);
+        $disks = [(string) config('media-vault.storage.disk', 'public')];
         $uploadPath = config('media-vault.storage.path', 'uploads');
         $orphans = [];
         $currentIndex = 0;
@@ -124,7 +124,7 @@ class MultiSourceFileRepository implements FileRepositoryContract
         $scannedCount = 0;
         $maxScanLimit = config('media-vault.max_orphan_scan_limit', 100000);
 
-        foreach (array_keys($disks) as $disk) {
+        foreach ($disks as $disk) {
             try {
                 /** @var \Illuminate\Filesystem\FilesystemAdapter $diskStorage */
                 $diskStorage = Storage::disk((string) $disk);
@@ -139,6 +139,11 @@ class MultiSourceFileRepository implements FileRepositoryContract
                     
                     $file = $item->path();
                     if (str_starts_with(basename($file), '.')) continue;
+
+                    // Soft-deleted physical files live under .trash/ — never treat them as live orphans.
+                    if (\MohamedSamy902\LaravelMediaVault\Support\TrashPath::isTrashed($file)) {
+                        continue;
+                    }
 
                     if (!isset($usedPathsMap[$file])) {
                         if ($currentIndex >= $offset && $currentIndex < $offset + $perPage) {

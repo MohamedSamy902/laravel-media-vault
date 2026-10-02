@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Services;
 
 use Intervention\Image\ImageManager;
@@ -101,8 +103,9 @@ final class ImageProcessor implements ImageProcessorContract
                     $xOffset  = (int) ($watermark['x_offset'] ?? 10);
                     $yOffset  = (int) ($watermark['y_offset'] ?? 10);
                     $position = $watermark['position'] ?? 'bottom-right';
+                    $opacity  = (int) ($watermark['opacity'] ?? 100);
 
-                    $image->place($watermarkPath, $position, $xOffset, $yOffset);
+                    $image->place($watermarkPath, $position, $xOffset, $yOffset, $opacity);
                 } else {
                     Log::warning("Watermark file not found: {$watermarkPath}");
                 }

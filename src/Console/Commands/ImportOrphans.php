@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Console\Commands;
 
 use Illuminate\Console\Command;
@@ -21,12 +23,13 @@ class ImportOrphans extends Command
         }
 
         $diskName = (string) ($this->argument('disk') ?: ($config['storage']['disk'] ?? 'public'));
-        $this->info("Scanning disk [{$diskName}] for missing files...");
+        $uploadPath = trim((string) ($config['storage']['path'] ?? 'uploads'), '/');
+        $this->info("Scanning disk [{$diskName}] under [{$uploadPath}] for missing files...");
 
         /** @var \Illuminate\Filesystem\FilesystemAdapter $disk */
         $disk = Storage::disk($diskName);
         $driver = $disk->getDriver();
-        $listing = $driver->listContents('', true);
+        $listing = $driver->listContents($uploadPath, true);
         
         $imported = 0;
         $skipped = 0;
@@ -45,6 +48,8 @@ class ImportOrphans extends Command
             
             // Skip known thumbnails to avoid importing them as main files
             if (str_starts_with(basename($path), 'thumb_')) continue;
+
+            if (\MohamedSamy902\LaravelMediaVault\Support\TrashPath::isTrashed($path)) continue;
 
             $batch[] = $path;
             

@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>@yield('title', 'Media Manager') — Advanced File Upload</title>
+    <title>@yield('title', 'Media Manager') — Laravel Media Vault</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
@@ -827,7 +827,7 @@
             <div class="brand-icon">📁</div>
             <div>
                 <div class="brand-text">Media Manager</div>
-                <div class="brand-sub">Advanced File Upload</div>
+                <div class="brand-sub">Laravel Media Vault</div>
             </div>
         </div>
         <nav class="sidebar-nav">
@@ -866,7 +866,7 @@
                 <i class="fas fa-code" style="color: var(--accent); font-size: 14px;"></i>
                 <span style="font-size: 12px; font-weight: 600; color: var(--text-primary);">Mohamed Samy</span>
             </div>
-            <div class="version" style="font-size: 10px; opacity: 0.7;">Advanced File Upload v1.0.0</div>
+            <div class="version" style="font-size: 10px; opacity: 0.7;">Media Vault Dashboard</div>
         </div>
     </aside>
 
@@ -881,6 +881,24 @@
             </div>
         </header>
         <main class="content">
+            @php
+                $uiMiddleware = config('media-vault.ui.middleware', ['web']);
+                if (config('media-vault.ui.require_auth', false)) {
+                    $uiMiddleware = array_values(array_unique([...$uiMiddleware, 'auth']));
+                }
+                $dashboardSecured = in_array('auth', $uiMiddleware, true);
+                $uiPrefix = '/' . trim((string) config('media-vault.ui.route_prefix', 'media-vault'), '/');
+            @endphp
+
+            @if(!$dashboardSecured)
+            <div class="card" style="margin-bottom: 16px; border-color: var(--warning); background: var(--warning-bg);">
+                <div style="padding: 12px 16px; font-size: 13px; color: var(--text-primary);">
+                    <i class="fas fa-shield-alt" style="color: var(--warning);"></i>
+                    This dashboard is publicly accessible. Enable <code>ui.require_auth</code> or add the <code>auth</code> middleware in <code>config/media-vault.php</code>.
+                </div>
+            </div>
+            @endif
+
             <div id="pjax-container">
                 @yield('content')
             </div>
@@ -889,6 +907,18 @@
 
     <script>
         const CSRF = document.querySelector('meta[name="csrf-token"]').content;
+        const MEDIA_VAULT_UI_PREFIX = @json($uiPrefix);
+        const MEDIA_VAULT_ROUTES = {
+            destroy: @json(route('media-vault.media.destroy', ['encodedPath' => '__ENC__'])),
+            forceDestroy: @json(route('media-vault.media.force-destroy', ['encodedPath' => '__ENC__'])),
+            restore: @json(route('media-vault.media.restore', ['encodedPath' => '__ENC__'])),
+            scan: @json(route('media-vault.scan')),
+            scanStatus: @json(route('media-vault.scan.status')),
+        };
+
+        function mediaVaultUrl(template, encodedPath) {
+            return template.replace('__ENC__', encodedPath);
+        }
 
         const Toast = Swal.mixin({
             toast: true,
@@ -910,9 +940,39 @@
             });
         }
 
+        function pollScanStatus(attempt = 0) {
+            fetch(MEDIA_VAULT_ROUTES.scanStatus, {
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.state === 'complete') {
+                        const count = d.orphaned_count ?? 0;
+                        Swal.fire({
+                            icon: count > 0 ? 'warning' : 'success',
+                            title: 'Scan Complete',
+                            text: `Found ${count} orphaned file(s) on disk.`,
+                            background: 'var(--bg-card)',
+                            color: 'var(--text-primary)'
+                        });
+                        return;
+                    }
+
+                    if (attempt >= 30) {
+                        toast('Scan is still running. Refresh the page in a moment.', 'info');
+                        return;
+                    }
+
+                    setTimeout(() => pollScanStatus(attempt + 1), 2000);
+                })
+                .catch(() => toast('Unable to read scan status', 'error'));
+        }
+
         function runScan() {
             Swal.fire({
-                title: 'Scanning...',
+                title: 'Scan queued',
                 text: 'Checking database vs physical storage...',
                 allowOutsideClick: false,
                 didOpen: () => Swal.showLoading(),
@@ -920,7 +980,7 @@
                 color: 'var(--text-primary)'
             });
 
-            fetch('{{ route('media-vault.scan') }}', {
+            fetch(MEDIA_VAULT_ROUTES.scan, {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': CSRF,
@@ -929,13 +989,10 @@
                 })
                 .then(r => r.json())
                 .then(d => {
-                    Swal.fire({
-                        icon: d.orphaned_count > 0 ? 'warning' : 'success',
-                        title: 'Scan Complete',
-                        text: `Scanned ${d.checked} files. Found ${d.orphaned_count} orphaned DB records.`,
-                        background: 'var(--bg-card)',
-                        color: 'var(--text-primary)'
-                    });
+                    if (!d.status) {
+                        throw new Error(d.message || 'Scan request failed');
+                    }
+                    pollScanStatus(0);
                 })
                 .catch(() => toast('Scan failed', 'error'));
         }
@@ -943,20 +1000,21 @@
         function deleteFile(id, force = false) {
             Swal.fire({
                 title: force ? 'Permanently Delete?' : 'Move to Trash?',
-                text: force ? "This will delete the file from disk. You won't be able to revert this!" :
-                    "You can restore this file later.",
+                html: force
+                    ? "This will <strong>permanently delete</strong> the file from the <strong>database</strong> and from <strong>storage</strong> (including thumbnails).<br><br>You will not be able to restore it."
+                    : "The file will be moved to Trash. You can restore it later.",
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: 'var(--danger)',
                 cancelButtonColor: 'var(--text-muted)',
-                confirmButtonText: 'Yes, delete it!',
+                confirmButtonText: force ? 'Yes, delete forever' : 'Yes, move to trash',
                 background: 'var(--bg-card)',
                 color: 'var(--text-primary)'
             }).then((result) => {
                 if (result.isConfirmed) {
                     const url = force ?
-                        `/media-vault/media/${id}/force` :
-                        `/media-vault/media/${id}`;
+                        mediaVaultUrl(MEDIA_VAULT_ROUTES.forceDestroy, id) :
+                        mediaVaultUrl(MEDIA_VAULT_ROUTES.destroy, id);
                     fetch(url, {
                             method: 'DELETE',
                             headers: {
@@ -977,7 +1035,7 @@
         }
 
         function restoreFile(id) {
-            fetch(`/media-vault/media/${id}/restore`, {
+            fetch(mediaVaultUrl(MEDIA_VAULT_ROUTES.restore, id), {
                     method: 'POST',
                     headers: {
                         'X-CSRF-TOKEN': CSRF,
@@ -987,8 +1045,8 @@
                 .then(r => r.json())
                 .then(d => {
                     toast(d.message, d.status ? 'success' : 'error');
-                    if (d.status) {
-                        location.reload();
+                    if (d.status && typeof loadPage === 'function') {
+                        loadPage(window.location.href, false);
                     }
                 })
                 .catch(() => toast('Restore failed', 'error'));
@@ -1005,7 +1063,7 @@
                     // Check if it's the same origin and part of our dashboard
                     const url = new URL(link.href);
                     if (url.origin === window.location.origin && url.pathname.startsWith(
-                            '/media-vault')) {
+                            MEDIA_VAULT_UI_PREFIX)) {
                         e.preventDefault();
                         loadPage(link.href);
 

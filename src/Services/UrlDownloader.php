@@ -15,16 +15,10 @@ use RuntimeException;
 /**
  * Downloads remote files to a local temporary path for subsequent processing.
  *
- * Two download strategies are available and selected via config:
+ * Always streams the response directly to disk via a file sink to avoid
+ * loading large remote payloads into memory (OOM-safe).
  *
- *   - "chunked": loads the full response body into memory first, then writes
- *     to disk. Supports automatic retry on HTTP 429 (rate limiting).
- *
- *   - "simple": streams the response directly to disk via a file sink,
- *     which is more memory-efficient for large files.
- *
- * Both strategies validate the SSRF safety of the URL before issuing
- * any outbound HTTP request.
+ * Validates the SSRF safety of the URL before issuing any outbound HTTP request.
  */
 final class UrlDownloader
 {
@@ -37,8 +31,7 @@ final class UrlDownloader
     /**
      * Downloads a file from the given URL and returns it as an UploadedFile.
      *
-     * The download strategy (chunked vs. simple) is determined by the
-     * "url_download.chunked" config value.
+     * Downloads are always streamed to disk.
      *
      * @param string $url     The remote URL to download from
      * @param array<string, mixed> $options Optional per-request overrides (timeout, max_size)

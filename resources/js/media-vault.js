@@ -1,5 +1,5 @@
 /**
- * Advanced File Upload JS Client
+ * Laravel Media Vault JS Client
  *
  * Provides resumable chunked file transfers, concurrent multi-file upload support,
  * localStorage state persistence per file, and auto-detection of interrupted uploads on page load.
@@ -80,7 +80,10 @@ document.addEventListener('DOMContentLoaded', function () {
         constructor(file, options = {}) {
             this.file = file;
             this.options = options;
-            this.chunkSize = options.chunkSize || 5 * 1024 * 1024; // 5MB default
+            const configuredChunk = (typeof window !== 'undefined' && window.MEDIA_VAULT_CHUNK_SIZE)
+                ? Number(window.MEDIA_VAULT_CHUNK_SIZE)
+                : null;
+            this.chunkSize = options.chunkSize || configuredChunk || 5 * 1024 * 1024; // 5MB default
             this.totalChunks = Math.ceil(file.size / this.chunkSize);
             this.fingerprint = getFileFingerprint(file);
             this.sessionId = null;
@@ -164,7 +167,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
                 const xhr = new XMLHttpRequest();
-                const uploadUrl = this.options.uploadUrl || '/media-vault/upload';
+                const defaultPrefix = (typeof window !== 'undefined' && window.MEDIA_VAULT_UI_PREFIX) || '/media-vault';
+                const uploadUrl = this.options.uploadUrl || `${defaultPrefix.replace(/\/$/, '')}/upload`;
 
                 xhr.open('POST', uploadUrl, true);
                 if (csrfToken) {
@@ -216,7 +220,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const pending = AfuStorage.getAllPending();
         if (pending.length === 0) return;
 
-        const prefix = options.routePrefix || '/media-vault';
+        const prefix = options.routePrefix
+            || (typeof window !== 'undefined' && window.MEDIA_VAULT_UI_PREFIX)
+            || '/media-vault';
         const container = document.getElementById(options.containerId || 'afu-resume-container') || createDefaultResumeContainer();
 
         for (const item of pending) {

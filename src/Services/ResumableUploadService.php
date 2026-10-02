@@ -9,7 +9,12 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use MohamedSamy902\LaravelMediaVault\Contracts\QuotaManagerContract;
+use MohamedSamy902\LaravelMediaVault\Exceptions\QuotaExceededException;
 use MohamedSamy902\LaravelMediaVault\Models\UploadSession;
+use MohamedSamy902\LaravelMediaVault\Security\VirusScanner;
+use MohamedSamy902\LaravelMediaVault\Support\DiskListingCache;
+use MohamedSamy902\LaravelMediaVault\Support\FileCategories;
 use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
 use RuntimeException;
 
@@ -21,6 +26,8 @@ final class ResumableUploadService
     public function __construct(
         private readonly StorageManager $storageManager,
         private readonly FileValidator  $fileValidator,
+        private readonly VirusScanner   $virusScanner,
+        private readonly QuotaManagerContract $quotaManager,
     ) {}
 
     /**
@@ -45,7 +52,7 @@ final class ResumableUploadService
         array  $options = [],
     ): UploadSession {
         $this->ensureDatabaseEnabled();
-        $this->preValidateSession($originalName, $mimeType, $totalSize, $options);
+        $this->preValidateSession($originalName, $mimeType, $totalSize, $totalChunks, $options);
 
         $ttlHours = (int) config('media-vault.chunked.session_ttl_hours', 24);
 
@@ -103,6 +110,24 @@ final class ResumableUploadService
                 // Chunk already stored — return current state without re-writing
                 Log::info("Chunk [{$chunkIndex}] for session [{$sessionId}] already received, skipping.");
             } else {
+                $incomingSize = (int) $chunk->getSize();
+                $receivedBytes = 0;
+                foreach ($chunks as $idx => $received) {
+                    if ($received !== true) {
+                        continue;
+                    }
+                    $existing = $this->chunkPath($sessionId, (int) $idx);
+                    if (is_file($existing)) {
+                        $receivedBytes += (int) filesize($existing);
+                    }
+                }
+
+                if (($receivedBytes + $incomingSize) > ((int) $session->total_size + 1024)) {
+                    throw new RuntimeException(
+                        "Chunk upload exceeds declared total size for session [{$sessionId}]."
+                    );
+                }
+
                 $this->writeChunkToDisk($sessionId, $chunkIndex, $chunk);
                 $session->markChunkReceived($chunkIndex);
             }
@@ -133,77 +158,106 @@ final class ResumableUploadService
      */
     public function completeSession(string $sessionId, array $options = []): UploadResult
     {
-        $session = $this->findActiveSession($sessionId);
-
-        if (!$session->isComplete()) {
-            $missing = $session->missingChunks();
-            throw new RuntimeException(
-                "Cannot complete session [{$sessionId}]: "
-                . count($missing) . " chunk(s) are still missing: "
-                . implode(', ', $missing)
-            );
-        }
-
-        $session->status = 'assembling';
-        $session->save();
-
-        $assembledPath = null;
+        $lock = \Illuminate\Support\Facades\Cache::lock("upload_session_{$sessionId}_complete", 30);
 
         try {
-            $assembledPath = $this->assembleChunks($session);
-            $uploadedFile  = new UploadedFile(
-                $assembledPath,
-                $session->original_name,
-                $session->mime_type,
-                null,
-                true,
-            );
+            $lock->block(10);
 
-            $detectedMime = $uploadedFile->getMimeType() ?: $session->mime_type;
-            if ($detectedMime !== 'application/octet-stream') {
-                $session->mime_type = $detectedMime;
+            return \Illuminate\Support\Facades\DB::transaction(function () use ($sessionId, $options) {
+                $session = $this->findActiveSession($sessionId, true);
+
+                if (in_array($session->status, ['assembling', 'complete'], true)) {
+                    throw new RuntimeException("Upload session [{$sessionId}] is already being completed.");
+                }
+
+                if (!$session->isComplete()) {
+                    $missing = $session->missingChunks();
+                    throw new RuntimeException(
+                        "Cannot complete session [{$sessionId}]: "
+                        . count($missing) . " chunk(s) are still missing: "
+                        . implode(', ', $missing)
+                    );
+                }
+
+                $session->status = 'assembling';
                 $session->save();
+
+                $assembledPath = null;
+
+                try {
+                    $assembledPath = $this->assembleChunks($session);
+                    $uploadedFile  = new UploadedFile(
+                        $assembledPath,
+                        $session->original_name,
+                        $session->mime_type,
+                        null,
+                        true,
+                    );
+
+                    $detectedMime = $uploadedFile->getMimeType() ?: $session->mime_type;
+                    if ($detectedMime !== 'application/octet-stream') {
+                        $session->mime_type = $detectedMime;
+                        $session->save();
+                    }
+
+                    /** @var array<string, mixed> $customRules */
+                    $customRules = is_array($options['validation_rules'] ?? null) ? $options['validation_rules'] : [];
+
+                    $this->fileValidator->validate(
+                        $uploadedFile,
+                        $session->mime_type,
+                        empty($customRules) ? '' : 'file',
+                        $customRules,
+                    );
+
+                    if (($assembledSize = (int) $uploadedFile->getSize()) > 0
+                && abs($assembledSize - (int) $session->total_size) > 1024
+            ) {
+                throw new RuntimeException(
+                    "Assembled file size [{$assembledSize}] does not match declared session size [{$session->total_size}]."
+                );
             }
 
-            /** @var array<string, mixed> $customRules */
-            $customRules = is_array($options['validation_rules'] ?? null) ? $options['validation_rules'] : [];
+            $this->virusScanner->scan((string) $uploadedFile->getRealPath());
 
-            $this->fileValidator->validate(
-                $uploadedFile,
-                $session->mime_type,
-                empty($customRules) ? '' : 'file',
-                $customRules,
-            );
+                    if (config('media-vault.quota.enabled') && Auth::check()) {
+                        $this->quotaManager->check((int) Auth::id(), (int) $uploadedFile->getSize());
+                    }
 
-            $result = $this->storageManager->store(
-                $uploadedFile,
-                trim($session->folder, '/'),
-                $session->disk,
-                $options,
-            );
+                    $result = $this->storageManager->store(
+                        $uploadedFile,
+                        trim($session->folder, '/'),
+                        $session->disk,
+                        $options,
+                    );
 
-            $session->status        = 'complete';
-            $session->assembled_path = $result->path;
-            $session->save();
+                    $session->status         = 'complete';
+                    $session->assembled_path = $result->path;
+                    $session->save();
 
-            Log::info("Session [{$sessionId}] completed — file stored at [{$result->path}].");
+                    DiskListingCache::forget($session->disk);
+                    Log::info("Session [{$sessionId}] completed — file stored at [{$result->path}].");
 
-            return $result;
+                    return $result;
+                } catch (\Exception $e) {
+                    $session->status = 'failed';
+                    $session->save();
 
-        } catch (\Exception $e) {
-            $session->status = 'failed';
-            $session->save();
+                    Log::error("Session [{$sessionId}] assembly failed: " . $e->getMessage());
 
-            Log::error("Session [{$sessionId}] assembly failed: " . $e->getMessage());
+                    throw new RuntimeException("Session assembly failed: " . $e->getMessage(), 0, $e);
+                } finally {
+                    $this->cleanupChunkDir($sessionId);
 
-            throw new RuntimeException("Session assembly failed: " . $e->getMessage(), 0, $e);
-
+                    if ($assembledPath !== null && is_file($assembledPath)) {
+                        unlink($assembledPath);
+                    }
+                }
+            });
+        } catch (\Illuminate\Contracts\Cache\LockTimeoutException $e) {
+            throw new RuntimeException('Could not acquire lock to complete upload session. Please retry.');
         } finally {
-            $this->cleanupChunkDir($sessionId);
-
-            if ($assembledPath !== null && is_file($assembledPath)) {
-                unlink($assembledPath);
-            }
+            $lock->release();
         }
     }
 
@@ -411,19 +465,20 @@ final class ResumableUploadService
             throw new RuntimeException("Upload session [{$sessionId}] has expired.");
         }
 
-        if ($session->status === 'complete') {
-            throw new RuntimeException("Upload session [{$sessionId}] is already complete.");
+        if (in_array($session->status, ['complete', 'assembling'], true)) {
+            throw new RuntimeException("Upload session [{$sessionId}] is already complete or assembling.");
         }
 
         return $session;
     }
 
     /**
-     * Pre-validates file extension, total size, and user quota before starting a session.
+     * Pre-validates chunk count, file extension, total size, and user quota before starting a session.
      *
      * @param string $originalName
      * @param string $mimeType
      * @param int    $totalSize
+     * @param int    $totalChunks
      * @param array<string, mixed> $options
      * @throws RuntimeException When pre-validation fails
      */
@@ -431,32 +486,50 @@ final class ResumableUploadService
         string $originalName,
         string $mimeType,
         int    $totalSize,
+        int    $totalChunks,
         array  $options = [],
     ): void {
-        // 1. Quota check if enabled
+        if ($totalChunks < 1) {
+            throw new RuntimeException('totalChunks must be at least 1.');
+        }
+
+        $maxChunks = (int) config('media-vault.chunked.max_chunks', 10000);
+        if ($maxChunks > 0 && $totalChunks > $maxChunks) {
+            throw new RuntimeException(
+                "totalChunks [{$totalChunks}] exceeds the configured maximum of {$maxChunks}."
+            );
+        }
+
+        if ($totalSize < 0) {
+            throw new RuntimeException('totalSize cannot be negative.');
+        }
+
+        $maxTotalSize = (int) config('media-vault.chunked.max_total_size', 5368709120);
+        if ($maxTotalSize > 0 && $totalSize > $maxTotalSize) {
+            $fileMb    = round($totalSize / 1048576, 2);
+            $allowedMb = round($maxTotalSize / 1048576, 2);
+            throw new RuntimeException(
+                "Declared file size ({$fileMb} MB) exceeds the chunked upload ceiling of {$allowedMb} MB."
+            );
+        }
+
+        // Quota check if enabled (serialized per-owner to reduce TOCTOU races).
         if (config('media-vault.quota.enabled', false)) {
-            $quotaManager = app(QuotaManager::class);
-            $userId       = Auth::id();
-            if ($userId !== null && !$quotaManager->hasAvailableSpace((string)$userId, $totalSize)) {
-                $mbSize = round($totalSize / 1048576, 2);
-                throw new RuntimeException("Uploading this file ({$mbSize} MB) exceeds your remaining storage quota.");
+            $userId = Auth::id();
+            if ($userId !== null) {
+                try {
+                    $this->quotaManager->check((int) $userId, $totalSize);
+                } catch (QuotaExceededException) {
+                    $mbSize = round($totalSize / 1048576, 2);
+                    throw new RuntimeException("Uploading this file ({$mbSize} MB) exceeds your remaining storage quota.");
+                }
             }
         }
 
-        // 2. Validate max size and extension against configured validation rules
+        // Validate max size and extension against configured validation rules
         $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
         $config = config('media-vault.validation', []);
-
-        $category = 'other';
-        if (in_array($ext, ['jpeg', 'png', 'jpg', 'gif', 'webp', 'svg'], true)) {
-            $category = 'image';
-        } elseif (in_array($ext, ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv'], true)) {
-            $category = 'video';
-        } elseif (in_array($ext, ['mp3', 'wav', 'ogg', 'm4a', 'flac'], true)) {
-            $category = 'audio';
-        } elseif (in_array($ext, ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'json', 'zip', 'rar', '7z'], true)) {
-            $category = 'document';
-        }
+        $category = FileCategories::categoryFromExtension($ext);
 
         /** @var string|array<mixed> $ruleVal */
         $ruleVal = $options['validation_rules']['file']

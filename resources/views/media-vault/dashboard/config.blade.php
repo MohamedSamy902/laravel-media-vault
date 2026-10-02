@@ -9,11 +9,23 @@
 <div class="alert alert-error">
     <i class="fas fa-exclamation-triangle"></i>
     Config not published yet. Run <code style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:4px;">php artisan vendor:publish --tag=config</code> first.
-    Changes here will update your <code>.env</code> file directly.
 </div>
 @endif
 
-<form action="{{ route('media-vault.config.save') }}" method="POST">
+<div class="card" style="margin-bottom: 20px; border-color: var(--info); background: var(--info-bg);">
+    <div style="padding: 14px 16px; font-size: 13px;">
+        This page is a <strong>read-only</strong> view of your current package settings.
+        Update <code>config/media-vault.php</code> or your <code>.env</code> file directly to apply changes.
+    </div>
+</div>
+
+@if(session('warning'))
+<div class="card" style="margin-bottom: 20px; border-color: var(--warning); background: var(--warning-bg);">
+    <div style="padding: 14px 16px; font-size: 13px;">{{ session('warning') }}</div>
+</div>
+@endif
+
+<form action="{{ route('media-vault.config.save') }}" method="POST" onsubmit="return false;">
     @csrf
 
     {{-- Storage --}}
@@ -21,8 +33,8 @@
         <div class="config-section-title"><i class="fas fa-database"></i> Storage</div>
         <div class="config-grid">
             <div class="form-group">
-                <label class="form-label">Default Disk <code>FILE_UPLOAD_DISK</code></label>
-                <select name="FILE_UPLOAD_DISK" class="form-control">
+                <label class="form-label">Default Disk <code>MEDIA_VAULT_DISK</code></label>
+                <select name="MEDIA_VAULT_DISK" class="form-control">
                     @foreach(array_keys(config('filesystems.disks', [])) as $d)
                         <option value="{{ $d }}" {{ ($config['storage']['disk'] ?? 'public') === $d ? 'selected' : '' }}>{{ $d }}</option>
                     @endforeach
@@ -30,8 +42,8 @@
                 <span class="form-hint">Which Laravel disk to store uploaded files on.</span>
             </div>
             <div class="form-group">
-                <label class="form-label">Upload Path <code>FILE_UPLOAD_PATH</code></label>
-                <input type="text" name="FILE_UPLOAD_PATH" class="form-control"
+                <label class="form-label">Upload Path <code>MEDIA_VAULT_PATH</code></label>
+                <input type="text" name="MEDIA_VAULT_PATH" class="form-control"
                        value="{{ $config['storage']['path'] ?? 'uploads' }}" placeholder="uploads">
                 <span class="form-hint">Base directory inside the disk.</span>
             </div>
@@ -43,10 +55,10 @@
         <div class="config-section-title"><i class="fas fa-globe"></i> CDN</div>
         <div class="config-grid">
             <div class="form-group">
-                <label class="form-label">CDN Enabled <code>FILE_UPLOAD_CDN_ENABLED</code></label>
+                <label class="form-label">CDN Enabled <code>MEDIA_VAULT_CDN_ENABLED</code></label>
                 <div class="toggle-wrap">
                     <label class="toggle">
-                        <input type="checkbox" name="FILE_UPLOAD_CDN_ENABLED" value="1"
+                        <input type="checkbox" name="MEDIA_VAULT_CDN_ENABLED" value="1"
                                {{ ($config['storage']['cdn']['enabled'] ?? false) ? 'checked' : '' }}>
                         <span class="toggle-slider"></span>
                     </label>
@@ -54,8 +66,8 @@
                 </div>
             </div>
             <div class="form-group">
-                <label class="form-label">CDN URL <code>FILE_UPLOAD_CDN_URL</code></label>
-                <input type="url" name="FILE_UPLOAD_CDN_URL" class="form-control"
+                <label class="form-label">CDN URL <code>MEDIA_VAULT_CDN_URL</code></label>
+                <input type="url" name="MEDIA_VAULT_CDN_URL" class="form-control"
                        value="{{ $config['storage']['cdn']['url'] ?? '' }}" placeholder="https://cdn.example.com">
             </div>
         </div>
@@ -66,10 +78,10 @@
         <div class="config-section-title"><i class="fas fa-table"></i> Database Tracking</div>
         <div class="config-grid">
             <div class="form-group">
-                <label class="form-label">DB Tracking Enabled <code>FILE_UPLOAD_DB_ENABLED</code></label>
+                <label class="form-label">DB Tracking Enabled <code>MEDIA_VAULT_DB_ENABLED</code></label>
                 <div class="toggle-wrap">
                     <label class="toggle">
-                        <input type="checkbox" name="FILE_UPLOAD_DB_ENABLED" value="1"
+                        <input type="checkbox" name="MEDIA_VAULT_DB_ENABLED" value="1"
                                {{ ($config['database']['enabled'] ?? true) ? 'checked' : '' }}>
                         <span class="toggle-slider"></span>
                     </label>
@@ -92,8 +104,8 @@
         <div class="config-section-title"><i class="fas fa-magic"></i> Image Processing</div>
         <div class="config-grid">
             <div class="form-group">
-                <label class="form-label">Image Driver <code>FILE_UPLOAD_IMAGE_DRIVER</code></label>
-                <select name="FILE_UPLOAD_IMAGE_DRIVER" class="form-control">
+                <label class="form-label">Image Driver <code>MEDIA_VAULT_IMAGE_DRIVER</code></label>
+                <select name="MEDIA_VAULT_IMAGE_DRIVER" class="form-control">
                     <option value="gd" {{ ($config['image_driver'] ?? 'gd') === 'gd' ? 'selected' : '' }}>GD (default)</option>
                     <option value="imagick" {{ ($config['image_driver'] ?? 'gd') === 'imagick' ? 'selected' : '' }}>Imagick</option>
                 </select>
@@ -119,13 +131,13 @@
         <div class="config-section-title"><i class="fas fa-cloud-download-alt"></i> URL Download</div>
         <div class="config-grid">
             <div class="form-group">
-                <label class="form-label">Timeout (seconds) <code>FILE_UPLOAD_URL_TIMEOUT</code></label>
-                <input type="number" name="FILE_UPLOAD_URL_TIMEOUT" class="form-control"
+                <label class="form-label">Timeout (seconds) <code>MEDIA_VAULT_URL_TIMEOUT</code></label>
+                <input type="number" name="MEDIA_VAULT_URL_TIMEOUT" class="form-control"
                        value="{{ $config['url_upload']['timeout_seconds'] ?? 10 }}" min="1" max="600">
             </div>
             <div class="form-group">
-                <label class="form-label">Max File Size (bytes) <code>FILE_UPLOAD_URL_MAX_SIZE</code></label>
-                <input type="number" name="FILE_UPLOAD_URL_MAX_SIZE" class="form-control"
+                <label class="form-label">Max File Size (bytes) <code>MEDIA_VAULT_URL_MAX_SIZE</code></label>
+                <input type="number" name="MEDIA_VAULT_URL_MAX_SIZE" class="form-control"
                        value="{{ $config['url_upload']['max_size_bytes'] ?? 52428800 }}" min="1048576">
                 <span class="form-hint">Current: {{ round(($config['url_upload']['max_size_bytes'] ?? 52428800) / 1048576, 1) }} MB</span>
             </div>
@@ -137,10 +149,10 @@
         <div class="config-section-title"><i class="fas fa-tachometer-alt"></i> Quota Management</div>
         <div class="config-grid">
             <div class="form-group">
-                <label class="form-label">Quota Enabled <code>FILE_UPLOAD_QUOTA_ENABLED</code></label>
+                <label class="form-label">Quota Enabled <code>MEDIA_VAULT_QUOTA_ENABLED</code></label>
                 <div class="toggle-wrap">
                     <label class="toggle">
-                        <input type="checkbox" name="FILE_UPLOAD_QUOTA_ENABLED" value="1"
+                        <input type="checkbox" name="MEDIA_VAULT_QUOTA_ENABLED" value="1"
                                {{ ($config['quota']['enabled'] ?? false) ? 'checked' : '' }}>
                         <span class="toggle-slider"></span>
                     </label>
@@ -165,14 +177,14 @@
         <div class="config-section-title"><i class="fas fa-layer-group"></i> Chunk Upload Limits</div>
         <div class="config-grid">
             <div class="form-group">
-                <label class="form-label">Max File Size (bytes) <code>FILE_UPLOAD_MAX_SIZE</code></label>
-                <input type="number" name="FILE_UPLOAD_MAX_SIZE" class="form-control"
+                <label class="form-label">Max File Size (bytes) <code>MEDIA_VAULT_MAX_SIZE</code></label>
+                <input type="number" name="MEDIA_VAULT_MAX_SIZE" class="form-control"
                        value="{{ $config['security']['max_size_bytes'] ?? 2147483648 }}" min="1048576">
                 <span class="form-hint">Current: {{ round(($config['security']['max_size_bytes'] ?? 2147483648) / 1073741824, 1) }} GB</span>
             </div>
             <div class="form-group">
-                <label class="form-label">Default Chunk Size (bytes) <code>FILE_UPLOAD_CHUNK_SIZE</code></label>
-                <input type="number" name="FILE_UPLOAD_CHUNK_SIZE" class="form-control"
+                <label class="form-label">Default Chunk Size (bytes) <code>MEDIA_VAULT_CHUNK_SIZE</code></label>
+                <input type="number" name="MEDIA_VAULT_CHUNK_SIZE" class="form-control"
                        value="{{ $config['chunking']['chunk_size_bytes'] ?? 2097152 }}" min="1048576">
                 <span class="form-hint">Current: {{ round(($config['chunking']['chunk_size_bytes'] ?? 2097152) / 1048576, 1) }} MB</span>
             </div>
@@ -184,8 +196,8 @@
         <div class="config-section-title"><i class="fas fa-broom"></i> Automatic Cleanup</div>
         <div class="config-grid">
              <div class="form-group">
-                <label class="form-label">Prune Unused After (Days) <code>FILE_UPLOAD_PRUNE_DAYS</code></label>
-                <input type="number" name="FILE_UPLOAD_PRUNE_DAYS" class="form-control"
+                <label class="form-label">Prune Unused After (Days) <code>MEDIA_VAULT_PRUNE_DAYS</code></label>
+                <input type="number" name="MEDIA_VAULT_PRUNE_DAYS" class="form-control"
                        value="{{ $config['database']['prune_after'] ?? 30 }}" min="1">
                 <span class="form-hint">Requires setting up Laravel Task Scheduler.</span>
             </div>
@@ -193,9 +205,9 @@
     </div>
 
     <div style="display:flex; justify-content:flex-end; gap:12px;">
-        <a href="{{ route('media-vault.index') }}" class="btn btn-ghost">Cancel</a>
-        <button type="submit" class="btn btn-primary">
-            <i class="fas fa-save"></i> Save to .env
+        <a href="{{ route('media-vault.index') }}" class="btn btn-ghost">Back to Dashboard</a>
+        <button type="button" class="btn btn-primary" disabled title="Edit config/media-vault.php directly">
+            <i class="fas fa-lock"></i> Read-only dashboard view
         </button>
     </div>
 </form>

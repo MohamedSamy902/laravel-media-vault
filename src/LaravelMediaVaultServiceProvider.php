@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use MohamedSamy902\LaravelMediaVault\Security\VirusScanner;
 
 /**
- * Registers and bootstraps the Advanced File Upload package services.
+ * Registers and bootstraps the Laravel Media Vault package services.
  *
  * All service bindings use the contract interfaces as keys so that
  * application code can override any implementation by rebinding the
@@ -75,6 +75,7 @@ class LaravelMediaVaultServiceProvider extends ServiceProvider
             $this->publishMigrations();
             $this->commands([
                 \MohamedSamy902\LaravelMediaVault\Console\Commands\PruneUnusedFiles::class,
+                \MohamedSamy902\LaravelMediaVault\Console\Commands\PruneTrashCommand::class,
                 \MohamedSamy902\LaravelMediaVault\Console\Commands\PruneExpiredSessions::class,
                 \MohamedSamy902\LaravelMediaVault\Console\Commands\ScanFilesCommand::class,
                 \MohamedSamy902\LaravelMediaVault\Console\Commands\DiscoverModelsCommand::class,
@@ -138,6 +139,7 @@ class LaravelMediaVaultServiceProvider extends ServiceProvider
         $this->app->singleton(StorageManager::class, fn ($app) => new StorageManager(
             imageProcessor: $app->make(ImageProcessorContract::class),
             mimeResolver:   $app->make(MimeTypeResolver::class),
+            trashManager:   $app->make(\MohamedSamy902\LaravelMediaVault\Services\TrashManager::class),
         ));
 
         $this->app->singleton(QuotaManagerContract::class, QuotaManager::class);
@@ -146,6 +148,8 @@ class LaravelMediaVaultServiceProvider extends ServiceProvider
         $this->app->singleton(ResumableUploadService::class, fn ($app) => new ResumableUploadService(
             storageManager: $app->make(StorageManager::class),
             fileValidator:  $app->make(FileValidator::class),
+            virusScanner:   $app->make(VirusScanner::class),
+            quotaManager:   $app->make(QuotaManagerContract::class),
         ));
     }
 

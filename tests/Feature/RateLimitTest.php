@@ -7,6 +7,7 @@ namespace MohamedSamy902\LaravelMediaVault\Tests\Feature;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use MohamedSamy902\LaravelMediaVault\Tests\TestCase;
+use PHPUnit\Framework\Attributes\Test;
 
 class RateLimitTest extends TestCase
 {
@@ -16,7 +17,7 @@ class RateLimitTest extends TestCase
         Storage::fake('public');
     }
 
-    /** @test */
+    #[Test]
     public function rate_limit_rejects_requests_exceeding_max_allowed_uploads(): void
     {
         $this->app['config']->set('media-vault.security.rate_limit', [

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Contracts;
 
 use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
@@ -25,10 +27,54 @@ interface MediaVaultContract
     public function uploadFromUrl(string|array $url, array $options = []): UploadResult|array;
 
     /**
-     * Delete a file or multiple files by ID, path, or array of IDs/paths.
+     * Soft-deletes (moves to trash) a file or a batch of files.
+     * Physical bytes are preserved under .trash/ and can be restored.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    public function trash(int|string|array $idOrPath): array;
+
+    /**
+     * Restores a soft-deleted file (or batch) from trash.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    public function restore(int|string|array $idOrPath): array;
+
+    /**
+     * Permanently deletes a file or batch from database and storage.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    public function forceDelete(int|string|array $idOrPath): array;
+
+    /**
+     * Permanently deletes a file or multiple files by ID, path, or array of IDs/paths.
+     *
+     * Alias of forceDelete() for backward compatibility.
      *
      * @param  int|string|array<int,int|string>  $idOrPath
      * @return array<string,mixed>|array<int,array<string,mixed>>
      */
     public function delete(int|string|array $idOrPath): array;
+
+    /**
+     * Mark upload record(s) as used. Optionally bind a polymorphic owner.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @param object|null $owner Eloquent model instance (optional)
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    public function markAsUsed(int|string|array $idOrPath, ?object $owner = null): array;
+
+    /**
+     * Mark upload record(s) as unused and optionally clear ownership.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    public function markAsUnused(int|string|array $idOrPath, bool $clearOwnership = true): array;
 }

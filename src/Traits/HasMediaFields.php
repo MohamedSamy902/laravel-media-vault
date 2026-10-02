@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace MohamedSamy902\LaravelMediaVault\Traits;
 
 use MohamedSamy902\LaravelMediaVault\Services\MediaSourceManager;
+use MohamedSamy902\LaravelMediaVault\Support\MediaUrl;
+use MohamedSamy902\LaravelMediaVault\Support\ThumbnailPath;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -68,19 +70,10 @@ trait HasMediaFields
         if ($size !== 'original') {
             $ext = strtolower(pathinfo((string)$path, PATHINFO_EXTENSION));
             if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif'])) {
-                $dir = dirname((string) $path);
-                $dir = $dir === '.' ? '' : $dir . '/';
-                $fileName = basename((string) $path);
-                $baseName = pathinfo($fileName, PATHINFO_FILENAME);
-                
-                $thumbPath = "{$dir}thumb_{$size}_{$baseName}.{$ext}";
-                
-                // Optional: Check if the thumbnail actually exists, otherwise fallback to original.
-                // We assume it exists to prevent disk I/O on every page load, similar to HasUploads metadata assumption.
-                $path = $thumbPath;
+                $path = ThumbnailPath::for((string) $path, $size);
             }
         }
 
-        return Storage::disk($disk)->url($path);
+        return MediaUrl::for($disk, (string) $path);
     }
 }

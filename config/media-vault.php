@@ -7,12 +7,12 @@ return [
     // =========================================================================
 
     'storage' => [
-        'disk'           => env('FILE_UPLOAD_DISK', 'public'),
-        'path'           => env('FILE_UPLOAD_PATH', 'uploads'),
+        'disk'           => env('MEDIA_VAULT_DISK', env('FILE_UPLOAD_DISK', 'public')),
+        'path'           => env('MEDIA_VAULT_PATH', env('FILE_UPLOAD_PATH', 'uploads')),
         'default_folder' => 'default',
         'cdn'            => [
-            'enabled' => env('FILE_UPLOAD_CDN_ENABLED', false),
-            'url'     => env('FILE_UPLOAD_CDN_URL', ''),
+            'enabled' => env('MEDIA_VAULT_CDN_ENABLED', env('FILE_UPLOAD_CDN_ENABLED', false)),
+            'url'     => env('MEDIA_VAULT_CDN_URL', env('FILE_UPLOAD_CDN_URL', '')),
         ],
     ],
 
@@ -21,12 +21,18 @@ return [
     // =========================================================================
 
     'chunking' => [
-        // Default chunk size in bytes (5 MB = 5242880 bytes)
+        // Default chunk size in bytes (5 MB). Consumed by media-vault.js when chunkSize is omitted.
         'default_chunk_size' => env('MEDIA_VAULT_CHUNK_SIZE', 5242880),
-
-        // Custom temporary directory for storing active chunk sessions.
-        // null defaults to storage_path('app/chunks') for disk safety.
+        // null defaults to storage_path('app/chunks')
         'temp_directory' => env('MEDIA_VAULT_CHUNK_TEMP_DIR', null),
+    ],
+
+    'chunked' => [
+        'session_ttl_hours' => env('MEDIA_VAULT_CHUNKED_TTL_HOURS', 24),
+        // Hard ceiling on declared chunk count per resumable session (DoS / memory guard).
+        'max_chunks' => env('MEDIA_VAULT_CHUNKED_MAX_CHUNKS', 10000),
+        // Absolute max declared total size for a resumable session (5 GB default).
+        'max_total_size' => env('MEDIA_VAULT_CHUNKED_MAX_TOTAL_SIZE', 5368709120),
     ],
 
     // =========================================================================
@@ -40,9 +46,9 @@ return [
         'document' => 'required|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,json,zip,rar,7z|max:512000',
         'other'    => 'required|file|max:5242880',
         'custom_fields' => [
-            'file'    => 'required|file|max:5242880',
+            'file'    => 'required|file|mimes:jpeg,png,jpg,gif,webp,svg,pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,json,zip,mp3,mp4,mov,webm|max:5242880',
             'files'   => 'required|array',
-            'files.*' => 'required|file|max:5242880',
+            'files.*' => 'required|file|mimes:jpeg,png,jpg,gif,webp,svg,pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,json,zip,mp3,mp4,mov,webm|max:5242880',
         ],
     ],
 
@@ -51,11 +57,7 @@ return [
     // =========================================================================
 
     'url_download' => [
-        'enabled'       => true,
-        'chunked'       => true,         // true = load into memory; false = stream to disk
-        'timeout'       => 300,          // seconds (legacy key — overridden by url_upload.timeout_seconds)
-        'max_size'      => 524288000,    // 500 MB (legacy key — overridden by url_upload.max_size_bytes)
-        'chunk_size'    => 5242880,      // 5 MB streaming chunk
+        // Allowed MIME map for remote URL ingest (empty type lists allow none for that type)
         'allowed_mimes' => [
             'image'       => ['jpeg', 'png', 'jpg', 'gif', 'webp', 'svg'],
             'video'       => ['mp4', 'mov', 'avi', 'mkv', 'webm'],
@@ -72,22 +74,17 @@ return [
         ],
     ],
 
-    // SSRF protection settings for URL uploads
     'url_upload' => [
-        // Only allow these domains (empty = allow all public domains)
         'allowed_domains'  => [],
-        // Hard timeout for the download request (seconds)
-        'timeout_seconds'  => env('FILE_UPLOAD_URL_TIMEOUT', 10),
-        // Maximum file size allowed from a URL (bytes) — default 50 MB
-        'max_size_bytes'   => env('FILE_UPLOAD_URL_MAX_SIZE', 52428800),
+        'timeout_seconds'  => env('MEDIA_VAULT_URL_TIMEOUT', env('FILE_UPLOAD_URL_TIMEOUT', 10)),
+        'max_size_bytes'   => env('MEDIA_VAULT_URL_MAX_SIZE', env('FILE_UPLOAD_URL_MAX_SIZE', 52428800)),
     ],
 
     // =========================================================================
     // Image Processing (Intervention/Image v3)
     // =========================================================================
 
-    // Driver for Intervention/Image: 'gd' (default) or 'imagick'
-    'image_driver' => env('FILE_UPLOAD_IMAGE_DRIVER', 'gd'),
+    'image_driver' => env('MEDIA_VAULT_IMAGE_DRIVER', env('FILE_UPLOAD_IMAGE_DRIVER', 'gd')),
 
     'processing' => [
         'image' => [
@@ -96,13 +93,13 @@ return [
                 'width'                 => 1200,
                 'height'                => 1200,
                 'maintain_aspect_ratio' => true,
-                // false = allow upscaling; true = only downscale (default)
                 'upsize'                => false,
             ],
             'watermark' => [
                 'enabled'  => false,
                 'path'     => null,   // relative to public_path()
                 'position' => 'bottom-right',
+                // Passed to Intervention place() opacity (0–100)
                 'opacity'  => 50,
                 'x_offset' => 10,
                 'y_offset' => 10,
@@ -113,11 +110,12 @@ return [
                 // 'greyscale'  => true,
                 // 'blur'       => 0,
             ],
-            'convert_to' => 'webp',   // null = keep original format
+            'convert_to' => 'webp',
             'quality'    => 85,
-            // Requires spatie/image-optimizer: composer require spatie/image-optimizer
+            // Requires: composer require spatie/image-optimizer
             'optimize'   => false,
         ],
+        // Optional FFmpeg module (not bundled). Keep disabled unless you provide an FFmpeg binary.
         'video' => [
             'enabled'    => false,
             'convert_to' => 'mp4',
@@ -138,8 +136,11 @@ return [
             'large'  => ['width' => 600, 'height' => 600, 'crop' => false],
             'mobile' => ['width' => 480, 'height' => 850, 'crop' => false],
         ],
-        'for_videos' => false,  // Requires FFmpeg
-        'seconds'    => 5,      // Second to capture for video thumbnails
+        // Generate thumbnails after upload via queue job when true.
+        'async'      => env('MEDIA_VAULT_THUMBS_ASYNC', false),
+        // Video frame capture requires FFmpeg (optional / not implemented in core).
+        'for_videos' => false,
+        'seconds'    => 5,
     ],
 
     // =========================================================================
@@ -147,37 +148,30 @@ return [
     // =========================================================================
 
     'quota' => [
-        'enabled'           => env('FILE_UPLOAD_QUOTA_ENABLED', false),
+        'enabled'           => env('MEDIA_VAULT_QUOTA_ENABLED', env('FILE_UPLOAD_QUOTA_ENABLED', false)),
         'max_size_per_user' => 1073741824,  // 1 GB
-        // Column used to identify the owner — change to 'tenant_id' for multi-tenant
-        'key_column'        => 'user_id',
-        // Fire QuotaWarning event when usage exceeds this fraction (0.9 = 90%)
+        'key_column'        => 'user_id',   // or tenant_id for multi-tenant
+        // Fire QuotaWarning when usage/limit exceeds this fraction
         'warning_threshold' => 0.9,
-        'check_method'      => 'database',  // 'database' | 'session'
     ],
 
-    // =========================================================================
     // =========================================================================
     // Multi-Source Media & Scanning
     // =========================================================================
 
-    // List of custom Eloquent models that use the HasMediaFields trait.
-    // The Dashboard and scanners will automatically discover and include these models.
     'media_models' => [],
-
-    // Maximum number of files to scan in a single Orphaned Files scan operation.
-    // Increase if you have massive storage, but keep reasonable to prevent OOM.
-    'max_orphan_scan_limit' => env('FILE_UPLOAD_MAX_SCAN_LIMIT', 100000),
+    'max_orphan_scan_limit' => env('MEDIA_VAULT_MAX_SCAN_LIMIT', env('FILE_UPLOAD_MAX_SCAN_LIMIT', 100000)),
 
     // =========================================================================
     // Database Tracking
     // =========================================================================
 
     'database' => [
-        'enabled'     => env('FILE_UPLOAD_DB_ENABLED', true),
+        'enabled'     => env('MEDIA_VAULT_DB_ENABLED', env('FILE_UPLOAD_DB_ENABLED', true)),
         'model'       => \MohamedSamy902\LaravelMediaVault\Models\FileUpload::class,
         'table'       => 'file_uploads',
-        'prune_after' => 30,   // Days before pruning orphaned records (null = never)
+        // Days before pruning unused (is_used=false) records; null = never
+        'prune_after' => 30,
     ],
 
     // =========================================================================
@@ -185,67 +179,54 @@ return [
     // =========================================================================
 
     'security' => [
-        // Number of files requested for deletion at which an extra warning is triggered.
         'bulk_delete_warning_threshold' => 100,
-        // Validate file binary magic bytes against declared MIME type
+        // Compare finfo magic bytes against declared MIME / extension
         'strict_mime_validation' => true,
         'rate_limit'             => [
-            'enabled'     => false,
+            'enabled'     => env('MEDIA_VAULT_RATE_LIMIT_ENABLED', true),
             'max_uploads' => 60,
             'per_minutes' => 1,
         ],
         'virus_scan' => [
-            'enabled' => false,
-            'driver'  => 'clamav',
-            'path'    => env('CLAMSCAN_PATH', '/usr/bin/clamscan'),
+            'enabled'   => false,
+            'path'      => env('CLAMSCAN_PATH', '/usr/bin/clamscan'),
+            'socket'    => env('CLAMD_SOCKET', 'tcp://127.0.0.1:3310'),
+            'fail_mode' => env('CLAMAV_FAIL_MODE', 'closed'), // closed | open
         ],
     ],
 
     // =========================================================================
-    // Chunked / Resumable Uploads
-    // =========================================================================
-
-    'chunked' => [
-        'session_ttl_hours' => 24,
-    ],
-
-    // =========================================================================
-    // Temporary Signed URLs (for local disk)
+    // Temporary Signed URLs
+    // Uses Storage::temporaryUrl() when the disk supports it; otherwise a
+    // signed local route under route_prefix (TemporaryUrl helper).
     // =========================================================================
 
     'temp_url' => [
+        'enabled'      => true,
         'route_prefix' => 'media-vault-urls',
-        'middleware'   => [],
+        'route_name'   => 'media-vault.temp',
+        'middleware'   => ['web'],
     ],
 
     // =========================================================================
-    // Compression
+    // Image quality override for encoded outputs (not document compression)
     // =========================================================================
 
     'compression' => [
         'enabled' => false,
-        'types'   => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'],
-        'quality' => 80,
-    ],
-
-    // =========================================================================
-    // Logging
-    // =========================================================================
-
-    'logging' => [
-        'enabled' => true,
-        'level'   => 'info',
+        'quality' => 80, // applied when enabled as image encode quality override
     ],
 
     // =========================================================================
     // Media Manager UI Dashboard
     // =========================================================================
 
-    'ui' => [
-        // Route prefix for the dashboard (e.g. /media-vault)
-        'route_prefix' => env('FILE_UPLOAD_UI_PREFIX', 'media-vault'),
-        // Middleware applied to all dashboard routes
-        // Add 'auth' to require login, or a custom middleware like 'admin'
+        'ui' => [
+        'route_prefix' => env('MEDIA_VAULT_UI_PREFIX', env('FILE_UPLOAD_UI_PREFIX', 'media-vault')),
+        'require_auth' => env('MEDIA_VAULT_UI_REQUIRE_AUTH', env('FILE_UPLOAD_UI_REQUIRE_AUTH', true)),
+        // When true (default), mutating dashboard actions require the file owner or a null owner.
+        'enforce_ownership' => env('MEDIA_VAULT_UI_ENFORCE_OWNERSHIP', true),
+        // Add 'auth' manually, or enable ui.require_auth above.
         'middleware'   => ['web'],
     ],
 

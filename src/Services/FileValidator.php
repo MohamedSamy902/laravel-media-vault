@@ -45,6 +45,56 @@ final class FileValidator
         if ($validator->fails()) {
             throw new RuntimeException($validator->errors()->first());
         }
+
+        $this->assertMagicMimeMatches($file, $mimeType);
+    }
+
+    /**
+     * Optionally compare binary magic bytes with the declared MIME type.
+     */
+    private function assertMagicMimeMatches(UploadedFile $file, string $declaredMime): void
+    {
+        if (!config('media-vault.security.strict_mime_validation', false)) {
+            return;
+        }
+
+        $realPath = $file->getRealPath();
+        if (!$realPath || !is_readable($realPath)) {
+            return;
+        }
+
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $detected = $finfo->file($realPath);
+        if (!is_string($detected) || $detected === '') {
+            return;
+        }
+
+        $normalize = static function (string $mime): string {
+            $mime = strtolower($mime);
+            return $mime === 'image/jpg' ? 'image/jpeg' : $mime;
+        };
+
+        $declared = $normalize($declaredMime);
+        $detected = $normalize($detected);
+
+        // Allow octet-stream only when finfo also reports octet-stream/empty.
+        if (
+            in_array($declared, ['application/octet-stream', 'binary/octet-stream'], true)
+            && in_array($detected, ['application/octet-stream', 'binary/octet-stream', 'inode/x-empty'], true)
+        ) {
+            return;
+        }
+
+        if ($declared !== $detected) {
+            // SVG uploads often report text/plain or text/xml via finfo.
+            if (str_contains($declared, 'svg') && (str_contains($detected, 'svg') || str_starts_with($detected, 'text/'))) {
+                return;
+            }
+
+            throw new RuntimeException(
+                "File content MIME [{$detected}] does not match declared MIME [{$declared}]."
+            );
+        }
     }
 
     /**
