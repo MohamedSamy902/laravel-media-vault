@@ -244,8 +244,10 @@ return [
     'ui' => [
         // Route prefix for the dashboard (e.g. /media-vault)
         'route_prefix' => env('FILE_UPLOAD_UI_PREFIX', 'media-vault'),
+        // When true, the auth middleware is appended to ui.middleware for all dashboard routes.
+        'require_auth' => env('FILE_UPLOAD_UI_REQUIRE_AUTH', false),
         // Middleware applied to all dashboard routes
-        // Add 'auth' to require login, or a custom middleware like 'admin'
+        // Add 'auth' manually, or enable ui.require_auth above.
         'middleware'   => ['web'],
     ],
 

@@ -239,6 +239,6 @@ class MediaManagerDashboardTest extends TestCase
         $response = $this->postJson(route('media-vault.scan'));
         
         $response->assertStatus(200)
-                 ->assertJsonPath('orphaned_count', 'Scanning...');
+                 ->assertJsonPath('state', 'queued');
     }
 }

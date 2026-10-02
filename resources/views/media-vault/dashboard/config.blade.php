@@ -9,11 +9,23 @@
 <div class="alert alert-error">
     <i class="fas fa-exclamation-triangle"></i>
     Config not published yet. Run <code style="background:rgba(0,0,0,0.3);padding:2px 6px;border-radius:4px;">php artisan vendor:publish --tag=config</code> first.
-    Changes here will update your <code>.env</code> file directly.
 </div>
 @endif
 
-<form action="{{ route('media-vault.config.save') }}" method="POST">
+<div class="card" style="margin-bottom: 20px; border-color: var(--info); background: var(--info-bg);">
+    <div style="padding: 14px 16px; font-size: 13px;">
+        This page is a <strong>read-only</strong> view of your current package settings.
+        Update <code>config/media-vault.php</code> or your <code>.env</code> file directly to apply changes.
+    </div>
+</div>
+
+@if(session('warning'))
+<div class="card" style="margin-bottom: 20px; border-color: var(--warning); background: var(--warning-bg);">
+    <div style="padding: 14px 16px; font-size: 13px;">{{ session('warning') }}</div>
+</div>
+@endif
+
+<form action="{{ route('media-vault.config.save') }}" method="POST" onsubmit="return false;">
     @csrf
 
     {{-- Storage --}}
@@ -193,9 +205,9 @@
     </div>
 
     <div style="display:flex; justify-content:flex-end; gap:12px;">
-        <a href="{{ route('media-vault.index') }}" class="btn btn-ghost">Cancel</a>
-        <button type="submit" class="btn btn-primary">
-            <i class="fas fa-save"></i> Save to .env
+        <a href="{{ route('media-vault.index') }}" class="btn btn-ghost">Back to Dashboard</a>
+        <button type="button" class="btn btn-primary" disabled title="Edit config/media-vault.php directly">
+            <i class="fas fa-lock"></i> Read-only dashboard view
         </button>
     </div>
 </form>

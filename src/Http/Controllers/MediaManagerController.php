@@ -139,8 +139,10 @@ declare(strict_types=1);
 
         public function saveConfig(Request $request): RedirectResponse
         {
-            // Keep existing logic
-            return back()->with('success', 'Configuration saved.');
+            return back()->with(
+                'warning',
+                'Dashboard configuration is read-only. Update config/media-vault.php or your .env file directly.'
+            );
         }
 
         public function sessions(Request $request): \Illuminate\Contracts\View\View
@@ -263,18 +265,65 @@ declare(strict_types=1);
             return response()->json(['status' => $restored, 'message' => $restored ? 'File restored successfully.' : 'Failed to restore file.']);
         }
 
+        public function bulkRestore(Request $request): JsonResponse
+        {
+            $encodedPaths = $request->input('ids', []);
+            if (!is_array($encodedPaths) || $encodedPaths === []) {
+                return response()->json(['status' => false, 'message' => 'No files selected.'], 400);
+            }
+
+            $restored = 0;
+            foreach ($encodedPaths as $encoded) {
+                $path = base64_decode((string) $encoded);
+                if ($this->isUnauthorizedToModify($path)) {
+                    continue;
+                }
+                if ($this->repository->restore($path)) {
+                    $restored++;
+                }
+            }
+
+            return response()->json([
+                'status' => $restored > 0,
+                'restored' => $restored,
+                'message' => $restored > 0
+                    ? "{$restored} file(s) restored successfully."
+                    : 'No files could be restored.',
+            ]);
+        }
+
         public function scan(): JsonResponse
         {
+            \Illuminate\Support\Facades\Cache::put('media-vault:scan-status', [
+                'state' => 'queued',
+                'started_at' => now()->toIso8601String(),
+            ], 3600);
 
-            // Run the scan command in the background to prevent timeouts on large disks.
-            // The command will update the cache, and the UI will read from it on next load.
             \Illuminate\Support\Facades\Artisan::queue('media-vault:scan');
             
             return response()->json([
                 'status' => true,
-                'orphaned_count' => 'Scanning...',
-                'message' => 'Background scan dispatched successfully. Refresh the page in a few minutes to see updated results.',
+                'state' => 'queued',
+                'message' => 'Orphan scan queued. Results will appear when processing finishes.',
                 'checked' => 'all disks',
+            ]);
+        }
+
+        public function scanStatus(): JsonResponse
+        {
+            $scan = \Illuminate\Support\Facades\Cache::get('media-vault:scan-status', ['state' => 'idle']);
+
+            if (($scan['state'] ?? '') === 'complete') {
+                $orphans = \Illuminate\Support\Facades\Cache::get('media-vault:orphans', []);
+                $scan['orphaned_count'] = is_array($orphans) ? count($orphans) : (int) ($scan['orphaned_count'] ?? 0);
+            }
+
+            return response()->json([
+                'status' => true,
+                'state' => $scan['state'] ?? 'idle',
+                'orphaned_count' => $scan['orphaned_count'] ?? null,
+                'started_at' => $scan['started_at'] ?? null,
+                'completed_at' => $scan['completed_at'] ?? null,
             ]);
         }
 

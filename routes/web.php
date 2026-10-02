@@ -8,6 +8,10 @@ use MohamedSamy902\LaravelMediaVault\Http\Controllers\MediaManagerController;
 $prefix     = config('media-vault.ui.route_prefix', 'media-vault');
 $middleware = config('media-vault.ui.middleware', ['web']);
 
+if (config('media-vault.ui.require_auth', false)) {
+    $middleware = array_values(array_unique([...$middleware, 'auth']));
+}
+
 Route::prefix($prefix)
     ->middleware($middleware)
     ->name('media-vault.')
@@ -28,5 +32,7 @@ Route::prefix($prefix)
         Route::delete('/media/{encodedPath}',           [MediaManagerController::class, 'destroy'])->name('media.destroy')->middleware('throttle:media-vault-api');
         Route::delete('/media/{encodedPath}/force',     [MediaManagerController::class, 'forceDestroy'])->name('media.force-destroy')->middleware('throttle:media-vault-api');
         Route::post('/media/{encodedPath}/restore',     [MediaManagerController::class, 'restore'])->name('media.restore');
-        Route::post('/scan',                   [MediaManagerController::class, 'scan'])->name('scan');
+        Route::post('/media/bulk-restore',             [MediaManagerController::class, 'bulkRestore'])->name('media.bulk-restore')->middleware('throttle:media-vault-api');
+        Route::post('/scan',                           [MediaManagerController::class, 'scan'])->name('scan');
+        Route::get('/scan/status',                     [MediaManagerController::class, 'scanStatus'])->name('scan.status');
     });

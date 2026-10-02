@@ -131,7 +131,11 @@
         <label for="select-all" style="font-size: 14px; font-weight: 600; cursor:pointer;"><span id="selected-count">0</span> files selected</label>
     </div>
     <div style="display: flex; gap: 8px;">
+        @if(($filter ?? 'all') === 'deleted')
+        <button onclick="bulkRestore()" class="btn btn-success btn-sm"><i class="fas fa-undo"></i> Restore Selected</button>
+        @else
         <button onclick="bulkDelete(false)" class="btn btn-danger btn-sm" style="background:var(--warning-bg); color:var(--warning); border-color:var(--warning);"><i class="fas fa-trash"></i> Move to Trash</button>
+        @endif
         <button onclick="bulkDelete(true)" class="btn btn-danger btn-sm"><i class="fas fa-fire"></i> Permanently Delete</button>
     </div>
 </div>
@@ -450,13 +454,56 @@
                     .then(r => r.json())
                     .then(d => {
                         toast(d.message);
-                        setTimeout(() => location.reload(), 1000);
+                        if (typeof loadPage === 'function') {
+                            loadPage(window.location.href, false);
+                        } else {
+                            setTimeout(() => location.reload(), 1000);
+                        }
                     })
                     .catch(() => toast('Bulk delete failed', 'error'));
                 }
             });
         })
         .catch(() => toast('Could not fetch preview', 'error'));
+    }
+
+    window.bulkRestore = function() {
+        const ids = Array.from(document.querySelectorAll('.file-checkbox:checked')).map(cb => cb.value);
+        if (ids.length === 0) {
+            return toast('No files selected', 'warning');
+        }
+
+        Swal.fire({
+            title: 'Restore selected files?',
+            text: `Restore ${ids.length} file(s) from Trash back to the library.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: 'var(--success)',
+            cancelButtonColor: 'var(--text-muted)',
+            confirmButtonText: 'Yes, restore'
+        }).then((result) => {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            fetch('{{ route("media-vault.media.bulk-restore") }}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': CSRF,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ ids })
+            })
+            .then(r => r.json())
+            .then(d => {
+                toast(d.message, d.status ? 'success' : 'error');
+                if (d.status && typeof loadPage === 'function') {
+                    loadPage(window.location.href, false);
+                }
+            })
+            .catch(() => toast('Bulk restore failed', 'error'));
+        });
     }
 </script>
 @endpush

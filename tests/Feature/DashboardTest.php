@@ -13,6 +13,6 @@ class DashboardTest extends TestCase
         $response = $this->get('/media-vault');
         
         $response->assertStatus(200);
-        $response->assertSee('Dashboard — Advanced File Upload', false);
+        $response->assertSee('Dashboard — Laravel Media Vault', false);
     }
 }

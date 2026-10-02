@@ -61,6 +61,10 @@ class DatabaseFileRepository implements FileRepositoryContract
             $query->where('type', $typeMap[$filter]);
         }
 
+        if ($filter !== 'deleted') {
+            $query->where('path', 'not like', '%/thumb\_%');
+        }
+
         $paginator = $query->latest()->paginate($perPage);
 
         $paginator->getCollection()->transform(function (FileUpload $file) {

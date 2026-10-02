@@ -164,7 +164,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
                 const xhr = new XMLHttpRequest();
-                const uploadUrl = this.options.uploadUrl || '/media-vault/upload';
+                const defaultPrefix = (typeof window !== 'undefined' && window.MEDIA_VAULT_UI_PREFIX) || '/media-vault';
+                const uploadUrl = this.options.uploadUrl || `${defaultPrefix.replace(/\/$/, '')}/upload`;
 
                 xhr.open('POST', uploadUrl, true);
                 if (csrfToken) {
@@ -216,7 +217,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const pending = AfuStorage.getAllPending();
         if (pending.length === 0) return;
 
-        const prefix = options.routePrefix || '/media-vault';
+        const prefix = options.routePrefix
+            || (typeof window !== 'undefined' && window.MEDIA_VAULT_UI_PREFIX)
+            || '/media-vault';
         const container = document.getElementById(options.containerId || 'afu-resume-container') || createDefaultResumeContainer();
 
         for (const item of pending) {

@@ -75,6 +75,8 @@ class DiskFileRepository implements FileRepositoryContract
                 $orphansMap = array_flip((array) $orphans);
                 $files = array_values(array_filter($files, fn ($p) => !isset($orphansMap[$p])));
             }
+
+            $files = array_values(array_filter($files, fn ($p) => !preg_match('#/thumb_[^_]+_.+$#', $p)));
         }
 
         $currentPage = (int) request()->input('page', 1);
