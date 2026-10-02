@@ -179,6 +179,11 @@ final class ResumableUploadService
 
             $this->virusScanner->scan((string) $uploadedFile->getRealPath());
 
+            if (config('media-vault.quota.enabled') && Auth::check()) {
+                app(\MohamedSamy902\LaravelMediaVault\Contracts\QuotaManagerContract::class)
+                    ->check((int) Auth::id(), (int) $uploadedFile->getSize());
+            }
+
             $result = $this->storageManager->store(
                 $uploadedFile,
                 trim($session->folder, '/'),

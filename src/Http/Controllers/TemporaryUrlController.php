@@ -32,6 +32,12 @@ class TemporaryUrlController extends Controller
             abort(403);
         }
 
+        $basePath = trim((string) config('media-vault.storage.path', 'uploads'), '/');
+        $normalized = ltrim(str_replace('\\', '/', $path), '/');
+        if ($basePath !== '' && !str_starts_with($normalized, $basePath . '/') && $normalized !== $basePath) {
+            abort(403);
+        }
+
         if (!Storage::disk($disk)->exists($path)) {
             abort(404);
         }

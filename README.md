@@ -186,7 +186,7 @@ Contains standard Laravel validation strings mapped to file types (`image`, `vid
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `ui.route_prefix` | string | `'media-vault'`| Base URL for the Media Manager Dashboard. |
-| `ui.require_auth` | boolean | `false` | When true, appends the `auth` middleware to dashboard routes. |
+| `ui.require_auth` | boolean | `true` | When true, appends the `auth` middleware to dashboard routes. |
 | `ui.middleware` | array | `['web']` | Middleware stack for the dashboard (add `'auth'` or enable `require_auth`). |
 
 ---
