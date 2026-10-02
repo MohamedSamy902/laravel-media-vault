@@ -41,12 +41,8 @@ class CentralMediaSource implements MediaSourceContract
 
             $thumbnails = $file->metadata['thumbnails'] ?? [];
             if (is_array($thumbnails) && !empty($thumbnails)) {
-                $dir = dirname((string) $file->path);
-                $dir = $dir === '.' ? '' : $dir . '/';
-                $fileName = basename((string) $file->path);
-
-                foreach (array_keys($thumbnails) as $sizeName) {
-                    yield "{$dir}thumb_{$sizeName}_{$fileName}";
+                foreach (\MohamedSamy902\LaravelMediaVault\Support\ThumbnailPath::allFor((string) $file->path) as $thumbPath) {
+                    yield $thumbPath;
                 }
             }
         }

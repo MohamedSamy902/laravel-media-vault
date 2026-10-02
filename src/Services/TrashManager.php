@@ -129,14 +129,8 @@ final class TrashManager
         }
 
         // Fallback to configured thumbnail naming convention.
-        $dir = dirname($logicalPath);
-        $dir = $dir === '.' ? '' : $dir . '/';
-        $fileName = basename($logicalPath);
-        $baseName = pathinfo($fileName, PATHINFO_FILENAME);
-        $ext = pathinfo($fileName, PATHINFO_EXTENSION);
-
-        foreach (array_keys(config('media-vault.thumbnails.sizes', [])) as $sizeName) {
-            $paths[] = TrashPath::normalize("{$dir}thumb_{$sizeName}_{$baseName}.{$ext}");
+        foreach (\MohamedSamy902\LaravelMediaVault\Support\ThumbnailPath::allFor($logicalPath) as $thumbPath) {
+            $paths[] = TrashPath::normalize($thumbPath);
         }
 
         return array_values(array_unique($paths));

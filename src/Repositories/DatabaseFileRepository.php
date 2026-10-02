@@ -12,6 +12,7 @@ use MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent;
 use MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent;
 use MohamedSamy902\LaravelMediaVault\Models\FileUpload;
 use MohamedSamy902\LaravelMediaVault\Services\TrashManager;
+use MohamedSamy902\LaravelMediaVault\Support\MediaUrl;
 use MohamedSamy902\LaravelMediaVault\Support\TrashPath;
 
 class DatabaseFileRepository implements FileRepositoryContract
@@ -244,15 +245,9 @@ class DatabaseFileRepository implements FileRepositoryContract
         $storage = Storage::disk($disk);
         $exists = $storage->exists($physicalPath);
 
-        $url = null;
-        if ($exists) {
-            $url = $storage->url($physicalPath);
-            $cdn = config('media-vault.storage.cdn', []);
-            if (($cdn['enabled'] ?? false) && !empty($cdn['url'])) {
-                $relativePath = ltrim((string) parse_url($url, PHP_URL_PATH), '/');
-                $url = rtrim((string) $cdn['url'], '/') . '/' . $relativePath;
-            }
-        }
+        $url = $exists
+            ? MediaUrl::forMaybeTrashed($disk, $physicalPath, $trashed)
+            : null;
 
         return new FileDto(
             path: $logicalPath,
@@ -261,7 +256,7 @@ class DatabaseFileRepository implements FileRepositoryContract
             size: (int) $file->size,
             lastModified: $file->updated_at?->toIso8601String() ?? now()->toIso8601String(),
             isUsed: (bool) $file->is_used,
-            url: $url,
+            url: $url === '' ? null : $url,
             disk: $disk,
             disk_exists: $exists,
             is_missing: !$exists,

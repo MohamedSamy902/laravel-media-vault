@@ -188,18 +188,8 @@ class CustomMediaSource implements MediaSourceContract
             return;
         }
 
-        $thumbnailsConfig = config('media-vault.thumbnails.sizes', []);
-        if (empty($thumbnailsConfig)) {
-            return;
-        }
-
-        $dir = dirname($path);
-        $dir = $dir === '.' ? '' : $dir . '/';
-        $fileName = basename($path);
-        $baseName = pathinfo($fileName, PATHINFO_FILENAME);
-
-        foreach (array_keys($thumbnailsConfig) as $sizeName) {
-            yield "{$dir}thumb_{$sizeName}_{$baseName}.{$ext}";
+        foreach (\MohamedSamy902\LaravelMediaVault\Support\ThumbnailPath::allFor($path) as $thumbPath) {
+            yield $thumbPath;
         }
     }
 

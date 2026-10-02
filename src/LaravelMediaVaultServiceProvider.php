@@ -139,6 +139,7 @@ class LaravelMediaVaultServiceProvider extends ServiceProvider
         $this->app->singleton(StorageManager::class, fn ($app) => new StorageManager(
             imageProcessor: $app->make(ImageProcessorContract::class),
             mimeResolver:   $app->make(MimeTypeResolver::class),
+            trashManager:   $app->make(\MohamedSamy902\LaravelMediaVault\Services\TrashManager::class),
         ));
 
         $this->app->singleton(QuotaManagerContract::class, QuotaManager::class);
@@ -147,6 +148,7 @@ class LaravelMediaVaultServiceProvider extends ServiceProvider
         $this->app->singleton(ResumableUploadService::class, fn ($app) => new ResumableUploadService(
             storageManager: $app->make(StorageManager::class),
             fileValidator:  $app->make(FileValidator::class),
+            virusScanner:   $app->make(VirusScanner::class),
         ));
     }
 

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Services;
 
 use Intervention\Image\ImageManager;

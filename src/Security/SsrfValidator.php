@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Security;
 
 use MohamedSamy902\LaravelMediaVault\Contracts\SsrfValidatorContract;
@@ -12,7 +14,8 @@ use MohamedSamy902\LaravelMediaVault\Exceptions\SsrfException;
  *  1. Only HTTP/HTTPS schemes are allowed
  *  2. Hostname resolves via DNS
  *  3. Resolved IP is not in any private/reserved range (IPv4 + IPv6)
- *  4. Optional domain allowlist enforcement
+ *  4. IPv4-mapped IPv6 addresses (::ffff:x.x.x.x) are unwrapped and checked as IPv4
+ *  5. Optional domain allowlist enforcement
  */
 final class SsrfValidator implements SsrfValidatorContract
 {
@@ -45,6 +48,7 @@ final class SsrfValidator implements SsrfValidatorContract
     private const BLOCKED_CIDRS_V6 = [
         ['::1',          128], // Loopback
         ['::',           128], // Unspecified
+        ['::ffff:0:0',   96],  // IPv4-mapped IPv6 (must not bypass IPv4 checks)
         ['fc00::',       7],   // Unique local (ULA)
         ['fe80::',       10],  // Link-local
         ['ff00::',       8],   // Multicast
@@ -61,7 +65,6 @@ final class SsrfValidator implements SsrfValidatorContract
             throw new SsrfException("Invalid or unparsable URL: {$url}");
         }
 
-        // 1. Scheme check — only http and https allowed
         $scheme = strtolower($parsed['scheme'] ?? '');
         if (!in_array($scheme, ['http', 'https'], true)) {
             throw new SsrfException(
@@ -71,12 +74,10 @@ final class SsrfValidator implements SsrfValidatorContract
 
         $host = $parsed['host'];
 
-        // Strip IPv6 brackets if present (e.g. [::1] -> ::1)
         if (str_starts_with($host, '[') && str_ends_with($host, ']')) {
             $host = substr($host, 1, -1);
         }
 
-        // 2. Domain allowlist enforcement
         $allowedDomains = config('media-vault.url_upload.allowed_domains', []);
         if (!empty($allowedDomains)) {
             $hostToCheck = $parsed['host'];
@@ -87,7 +88,6 @@ final class SsrfValidator implements SsrfValidatorContract
             }
         }
 
-        // 3. Resolve hostname — block if it already looks like a raw IP
         if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
             $this->assertNotPrivateIpV4($host, $url);
             return $host;
@@ -98,7 +98,6 @@ final class SsrfValidator implements SsrfValidatorContract
             return $host;
         }
 
-        // DNS resolution
         $resolved = gethostbyname($host);
 
         if ($resolved === $host) {
@@ -109,7 +108,6 @@ final class SsrfValidator implements SsrfValidatorContract
 
         $this->assertNotPrivateIpV4($resolved, $url);
 
-        // Also check AAAA records for IPv6
         $records = [];
         try {
             $result = dns_get_record($host, DNS_AAAA);
@@ -117,7 +115,7 @@ final class SsrfValidator implements SsrfValidatorContract
         } catch (\ErrorException $e) {
             \Illuminate\Support\Facades\Log::debug("DNS AAAA lookup failed for host [{$host}]: " . $e->getMessage());
         }
-        
+
         if (is_array($records)) {
             foreach ($records as $record) {
                 if (!empty($record['ipv6'])) {
@@ -125,13 +123,9 @@ final class SsrfValidator implements SsrfValidatorContract
                 }
             }
         }
-        
+
         return $resolved;
     }
-
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
 
     private function assertNotPrivateIpV4(string $ip, string $url): void
     {
@@ -146,6 +140,12 @@ final class SsrfValidator implements SsrfValidatorContract
 
     private function assertNotPrivateIpV6(string $ip, string $url): void
     {
+        $mappedV4 = $this->unwrapIpv4Mapped($ip);
+        if ($mappedV4 !== null) {
+            $this->assertNotPrivateIpV4($mappedV4, $url);
+            return;
+        }
+
         foreach (self::BLOCKED_CIDRS_V6 as [$cidr, $prefix]) {
             if ($this->ipV6InCidr($ip, $cidr, $prefix)) {
                 throw new SsrfException(
@@ -153,6 +153,22 @@ final class SsrfValidator implements SsrfValidatorContract
                 );
             }
         }
+    }
+
+    private function unwrapIpv4Mapped(string $ip): ?string
+    {
+        $bin = inet_pton($ip);
+        if ($bin === false || strlen($bin) !== 16) {
+            return null;
+        }
+
+        if (substr($bin, 0, 10) !== str_repeat("\0", 10) || substr($bin, 10, 2) !== "\xff\xff") {
+            return null;
+        }
+
+        $v4 = inet_ntop(substr($bin, 12, 4));
+
+        return is_string($v4) ? $v4 : null;
     }
 
     private function ipV4InCidr(string $ip, string $cidr, int $prefix): bool
@@ -181,13 +197,11 @@ final class SsrfValidator implements SsrfValidatorContract
         $bytes  = (int) ceil($prefix / 8);
         $remain = $prefix % 8;
 
-        // Compare full bytes
         if (substr($ipBin, 0, $bytes - ($remain > 0 ? 1 : 0))
             !== substr($cidrBin, 0, $bytes - ($remain > 0 ? 1 : 0))) {
             return false;
         }
 
-        // Compare the partial byte if prefix is not byte-aligned
         if ($remain > 0) {
             $byteIndex = $bytes - 1;
             $mask      = 0xFF << (8 - $remain) & 0xFF;

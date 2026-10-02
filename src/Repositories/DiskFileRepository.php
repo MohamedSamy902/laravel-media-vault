@@ -13,6 +13,9 @@ use MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent;
 use MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent;
 use MohamedSamy902\LaravelMediaVault\Services\FileUsageScanner;
 use MohamedSamy902\LaravelMediaVault\Services\TrashManager;
+use MohamedSamy902\LaravelMediaVault\Support\MediaUrl;
+use MohamedSamy902\LaravelMediaVault\Support\StreamHash;
+use MohamedSamy902\LaravelMediaVault\Support\ThumbnailPath;
 use MohamedSamy902\LaravelMediaVault\Support\TrashPath;
 
 class DiskFileRepository implements FileRepositoryContract
@@ -55,7 +58,7 @@ class DiskFileRepository implements FileRepositoryContract
     public function getFilteredFiles(array $filters = [], int $perPage = 20): LengthAwarePaginator
     {
         $disk = $this->getDisk();
-        $files = $disk->allFiles($this->getBasePath());
+        $files = $this->cachedListing();
         $filter = $filters['filter'] ?? 'all';
 
         if ($filter === 'deleted') {
@@ -65,18 +68,18 @@ class DiskFileRepository implements FileRepositoryContract
             $files = array_values(array_filter($files, fn ($path) => !TrashPath::isTrashed($path)));
 
             if ($filter === 'images') {
-                $files = array_values(array_filter($files, fn ($p) => str_starts_with((string) $disk->mimeType($p), 'image/')));
+                $files = array_values(array_filter($files, fn ($p) => $this->looksLikeImage($p)));
             } elseif ($filter === 'videos') {
-                $files = array_values(array_filter($files, fn ($p) => str_starts_with((string) $disk->mimeType($p), 'video/')));
+                $files = array_values(array_filter($files, fn ($p) => $this->looksLikeVideo($p)));
             } elseif ($filter === 'documents') {
-                $files = array_values(array_filter($files, fn ($p) => str_contains((string) $disk->mimeType($p), 'pdf') || str_contains((string) $disk->mimeType($p), 'word')));
+                $files = array_values(array_filter($files, fn ($p) => $this->looksLikeDocument($p)));
             } elseif ($filter === 'used') {
                 $orphans = Cache::get('media-vault:orphans', []);
                 $orphansMap = array_flip((array) $orphans);
                 $files = array_values(array_filter($files, fn ($p) => !isset($orphansMap[$p])));
             }
 
-            $files = array_values(array_filter($files, fn ($p) => !preg_match('#/thumb_[^_]+_.+$#', $p)));
+            $files = array_values(array_filter($files, fn ($p) => !ThumbnailPath::isThumbnail($p)));
         }
 
         $currentPage = (int) request()->input('page', 1);
@@ -89,12 +92,13 @@ class DiskFileRepository implements FileRepositoryContract
         $dtos = array_map(function ($path) use ($orphansMap, $filter) {
             $isUsed = !isset($orphansMap[$path]);
             $logical = $filter === 'deleted' ? TrashPath::fromTrash($path) : $path;
+            $isTrashed = $filter === 'deleted' || TrashPath::isTrashed($path);
 
             return $this->toDto(
                 path: $filter === 'deleted' ? $path : $logical,
                 isUsed: $isUsed,
                 logicalPath: $logical,
-                isTrashed: $filter === 'deleted' || TrashPath::isTrashed($path),
+                isTrashed: $isTrashed,
             );
         }, $items);
 
@@ -165,7 +169,7 @@ class DiskFileRepository implements FileRepositoryContract
                 $usedPathsMap[$path] = true;
             }
 
-            $allFiles = $this->getDisk()->allFiles($this->getBasePath());
+            $allFiles = $this->cachedListing();
             $orphans = [];
             foreach ($allFiles as $path) {
                 if (TrashPath::isTrashed($path)) {
@@ -200,11 +204,12 @@ class DiskFileRepository implements FileRepositoryContract
     {
         return Cache::remember('media-vault:duplicates', 3600, function () {
             $disk = $this->getDisk();
-            $allFiles = $disk->allFiles($this->getBasePath());
+            $allFiles = $this->cachedListing();
+            $diskName = (string) config('media-vault.storage.disk', 'public');
 
             $sizeGroups = [];
             foreach ($allFiles as $path) {
-                if (TrashPath::isTrashed($path)) {
+                if (TrashPath::isTrashed($path) || ThumbnailPath::isThumbnail($path)) {
                     continue;
                 }
                 $size = $disk->size($path);
@@ -219,7 +224,7 @@ class DiskFileRepository implements FileRepositoryContract
 
                 $hashGroups = [];
                 foreach ($paths as $path) {
-                    $hash = md5((string) $disk->get($path));
+                    $hash = StreamHash::md5($diskName, $path);
                     $hashGroups[$hash][] = $path;
                 }
 
@@ -240,51 +245,56 @@ class DiskFileRepository implements FileRepositoryContract
      */
     public function getStats(array $filters = []): array
     {
-        $disk = $this->getDisk();
-        $files = $disk->allFiles($this->getBasePath());
+        return Cache::remember('media-vault:disk-stats', 60, function () {
+            $disk = $this->getDisk();
+            $files = $this->cachedListing();
 
-        $totalSize = 0;
-        $images = 0;
-        $videos = 0;
-        $documents = 0;
-        $other = 0;
-        $activeCount = 0;
-        $trashedCount = 0;
+            $totalSize = 0;
+            $images = 0;
+            $videos = 0;
+            $documents = 0;
+            $other = 0;
+            $activeCount = 0;
+            $trashedCount = 0;
 
-        foreach ($files as $path) {
-            if (TrashPath::isTrashed($path)) {
-                $trashedCount++;
-                continue;
+            foreach ($files as $path) {
+                if (TrashPath::isTrashed($path)) {
+                    $trashedCount++;
+                    continue;
+                }
+
+                if (ThumbnailPath::isThumbnail($path)) {
+                    continue;
+                }
+
+                $activeCount++;
+                $totalSize += $disk->size($path);
+
+                if ($this->looksLikeImage($path)) {
+                    $images++;
+                } elseif ($this->looksLikeVideo($path)) {
+                    $videos++;
+                } elseif ($this->looksLikeDocument($path)) {
+                    $documents++;
+                } else {
+                    $other++;
+                }
             }
 
-            $activeCount++;
-            $totalSize += $disk->size($path);
-            $mime = $disk->mimeType($path);
+            $orphansCount = count(Cache::get('media-vault:orphans', []));
 
-            if (str_starts_with((string) $mime, 'image/')) {
-                $images++;
-            } elseif (str_starts_with((string) $mime, 'video/')) {
-                $videos++;
-            } elseif (str_contains((string) $mime, 'pdf') || str_contains((string) $mime, 'word')) {
-                $documents++;
-            } else {
-                $other++;
-            }
-        }
-
-        $orphansCount = count(Cache::get('media-vault:orphans', []));
-
-        return [
-            'total_files' => $activeCount,
-            'total_size' => $totalSize,
-            'used_files' => max(0, $activeCount - $orphansCount),
-            'unused_files' => $orphansCount,
-            'trashed_files' => $trashedCount,
-            'images' => $images,
-            'videos' => $videos,
-            'documents' => $documents,
-            'other' => $other,
-        ];
+            return [
+                'total_files' => $activeCount,
+                'total_size' => $totalSize,
+                'used_files' => max(0, $activeCount - $orphansCount),
+                'unused_files' => $orphansCount,
+                'trashed_files' => $trashedCount,
+                'images' => $images,
+                'videos' => $videos,
+                'documents' => $documents,
+                'other' => $other,
+            ];
+        });
     }
 
     protected function toDto(
@@ -321,11 +331,43 @@ class DiskFileRepository implements FileRepositoryContract
             size: $disk->size($physical),
             lastModified: date('c', $disk->lastModified($physical)),
             isUsed: $isUsed,
-            url: $disk->url($physical),
+            url: MediaUrl::forMaybeTrashed((string) config('media-vault.storage.disk', 'public'), $physical, $trashed),
             disk: config('media-vault.storage.disk', 'public'),
             disk_exists: true,
             is_missing: false,
             isTrashed: $trashed,
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function cachedListing(): array
+    {
+        $diskName = (string) config('media-vault.storage.disk', 'public');
+        $base = $this->getBasePath();
+        $key = "media-vault:disk-listing:{$diskName}:" . md5($base);
+
+        /** @var list<string> $files */
+        $files = Cache::remember($key, 60, function () {
+            return $this->getDisk()->allFiles($this->getBasePath());
+        });
+
+        return $files;
+    }
+
+    protected function looksLikeImage(string $path): bool
+    {
+        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif', 'bmp'], true);
+    }
+
+    protected function looksLikeVideo(string $path): bool
+    {
+        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv'], true);
+    }
+
+    protected function looksLikeDocument(string $path): bool
+    {
+        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'], true);
     }
 }

@@ -77,8 +77,11 @@ final class FileValidator
         $declared = $normalize($declaredMime);
         $detected = $normalize($detected);
 
-        // Allow octet-stream / empty declarations from some clients.
-        if (in_array($declared, ['application/octet-stream', 'binary/octet-stream'], true)) {
+        // Allow octet-stream only when finfo also reports octet-stream/empty.
+        if (
+            in_array($declared, ['application/octet-stream', 'binary/octet-stream'], true)
+            && in_array($detected, ['application/octet-stream', 'binary/octet-stream', 'inode/x-empty'], true)
+        ) {
             return;
         }
 

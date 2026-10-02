@@ -42,9 +42,9 @@ return [
         'document' => 'required|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,json,zip,rar,7z|max:512000',
         'other'    => 'required|file|max:5242880',
         'custom_fields' => [
-            'file'    => 'required|file|max:5242880',
+            'file'    => 'required|file|mimes:jpeg,png,jpg,gif,webp,svg,pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,json,zip,mp3,mp4,mov,webm|max:5242880',
             'files'   => 'required|array',
-            'files.*' => 'required|file|max:5242880',
+            'files.*' => 'required|file|mimes:jpeg,png,jpg,gif,webp,svg,pdf,doc,docx,xls,xlsx,ppt,pptx,txt,csv,json,zip,mp3,mp4,mov,webm|max:5242880',
         ],
     ],
 
@@ -132,6 +132,8 @@ return [
             'large'  => ['width' => 600, 'height' => 600, 'crop' => false],
             'mobile' => ['width' => 480, 'height' => 850, 'crop' => false],
         ],
+        // Generate thumbnails after upload via queue job when true.
+        'async'      => env('MEDIA_VAULT_THUMBS_ASYNC', false),
         // Video frame capture requires FFmpeg (optional / not implemented in core).
         'for_videos' => false,
         'seconds'    => 5,
@@ -177,7 +179,7 @@ return [
         // Compare finfo magic bytes against declared MIME / extension
         'strict_mime_validation' => true,
         'rate_limit'             => [
-            'enabled'     => false,
+            'enabled'     => env('MEDIA_VAULT_RATE_LIMIT_ENABLED', true),
             'max_uploads' => 60,
             'per_minutes' => 1,
         ],
@@ -217,7 +219,7 @@ return [
 
     'ui' => [
         'route_prefix' => env('MEDIA_VAULT_UI_PREFIX', env('FILE_UPLOAD_UI_PREFIX', 'media-vault')),
-        'require_auth' => env('MEDIA_VAULT_UI_REQUIRE_AUTH', env('FILE_UPLOAD_UI_REQUIRE_AUTH', false)),
+        'require_auth' => env('MEDIA_VAULT_UI_REQUIRE_AUTH', env('FILE_UPLOAD_UI_REQUIRE_AUTH', true)),
         // Add 'auth' manually, or enable ui.require_auth above.
         'middleware'   => ['web'],
     ],

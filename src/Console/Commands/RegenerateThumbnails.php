@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace MohamedSamy902\LaravelMediaVault\Console\Commands;
 
 use Illuminate\Console\Command;
@@ -10,7 +12,7 @@ use Illuminate\Support\Facades\Log;
 
 class RegenerateThumbnails extends Command
 {
-    protected $signature = 'media-vault:regenerate-thumbnails {--force : Regenerate even if thumbnails exist}';
+    protected $signature = 'media-vault:regenerate-thumbnails {--force : Regenerate even if thumbnails exist} {--path= : Limit regeneration to a single storage path}';
     protected $description = 'Regenerate missing thumbnails for all images in the central repository.';
 
     public function handle(ImageProcessorContract $processor): int
@@ -32,6 +34,10 @@ class RegenerateThumbnails extends Command
         $this->newLine();
 
         $query = FileUpload::query()->where('mime_type', 'like', 'image/%');
+
+        if ($path = $this->option('path')) {
+            $query->where('path', $path);
+        }
 
         $total = $query->count();
         if ($total === 0) {

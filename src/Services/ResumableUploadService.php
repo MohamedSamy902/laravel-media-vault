@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use MohamedSamy902\LaravelMediaVault\Models\UploadSession;
+use MohamedSamy902\LaravelMediaVault\Security\VirusScanner;
 use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
 use RuntimeException;
 
@@ -21,6 +22,7 @@ final class ResumableUploadService
     public function __construct(
         private readonly StorageManager $storageManager,
         private readonly FileValidator  $fileValidator,
+        private readonly VirusScanner   $virusScanner,
     ) {}
 
     /**
@@ -174,6 +176,8 @@ final class ResumableUploadService
                 empty($customRules) ? '' : 'file',
                 $customRules,
             );
+
+            $this->virusScanner->scan((string) $uploadedFile->getRealPath());
 
             $result = $this->storageManager->store(
                 $uploadedFile,
