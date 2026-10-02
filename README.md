@@ -170,6 +170,8 @@ Contains standard Laravel validation strings mapped to file types (`image`, `vid
 | `security.virus_scan.socket`| string | `'tcp://127.0.0.1:3310'` | ClamAV daemon socket (`tcp://` or `unix://`). |
 | `security.virus_scan.fail_mode`| string | `'closed'` | `closed` rejects uploads when scanner is down; `open` allows them. |
 | `chunked.session_ttl_hours` | int | `24` | Hours to keep pending resumable upload sessions before expiration. |
+| `chunked.max_chunks` | int | `10000` | Hard ceiling on declared chunk count per resumable session. |
+| `chunked.max_total_size` | int | `5368709120` | Absolute max declared total size (bytes) for a resumable session (5 GB). |
 | `chunking.default_chunk_size` | int | `5242880` | Default JS client chunk size when `chunkSize` is omitted. |
 
 ### Temporary URLs & image quality (`temp_url`, `compression`)

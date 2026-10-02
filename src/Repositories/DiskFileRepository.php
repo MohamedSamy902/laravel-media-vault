@@ -13,6 +13,7 @@ use MohamedSamy902\LaravelMediaVault\Events\FileDeletedEvent;
 use MohamedSamy902\LaravelMediaVault\Events\FileRestoredEvent;
 use MohamedSamy902\LaravelMediaVault\Services\FileUsageScanner;
 use MohamedSamy902\LaravelMediaVault\Services\TrashManager;
+use MohamedSamy902\LaravelMediaVault\Support\FileCategories;
 use MohamedSamy902\LaravelMediaVault\Support\MediaUrl;
 use MohamedSamy902\LaravelMediaVault\Support\StreamHash;
 use MohamedSamy902\LaravelMediaVault\Support\ThumbnailPath;
@@ -68,11 +69,11 @@ class DiskFileRepository implements FileRepositoryContract
             $files = array_values(array_filter($files, fn ($path) => !TrashPath::isTrashed($path)));
 
             if ($filter === 'images') {
-                $files = array_values(array_filter($files, fn ($p) => $this->looksLikeImage($p)));
+                $files = array_values(array_filter($files, fn ($p) => FileCategories::isImagePath($p)));
             } elseif ($filter === 'videos') {
-                $files = array_values(array_filter($files, fn ($p) => $this->looksLikeVideo($p)));
+                $files = array_values(array_filter($files, fn ($p) => FileCategories::isVideoPath($p)));
             } elseif ($filter === 'documents') {
-                $files = array_values(array_filter($files, fn ($p) => $this->looksLikeDocument($p)));
+                $files = array_values(array_filter($files, fn ($p) => FileCategories::isDocumentPath($p)));
             } elseif ($filter === 'used') {
                 $orphans = Cache::get('media-vault:orphans', []);
                 $orphansMap = array_flip((array) $orphans);
@@ -270,11 +271,11 @@ class DiskFileRepository implements FileRepositoryContract
                 $activeCount++;
                 $totalSize += $disk->size($path);
 
-                if ($this->looksLikeImage($path)) {
+                if (FileCategories::isImagePath($path)) {
                     $images++;
-                } elseif ($this->looksLikeVideo($path)) {
+                } elseif (FileCategories::isVideoPath($path)) {
                     $videos++;
-                } elseif ($this->looksLikeDocument($path)) {
+                } elseif (FileCategories::isDocumentPath($path)) {
                     $documents++;
                 } else {
                     $other++;
@@ -356,18 +357,4 @@ class DiskFileRepository implements FileRepositoryContract
         return $files;
     }
 
-    protected function looksLikeImage(string $path): bool
-    {
-        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif', 'bmp'], true);
-    }
-
-    protected function looksLikeVideo(string $path): bool
-    {
-        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv'], true);
-    }
-
-    protected function looksLikeDocument(string $path): bool
-    {
-        return in_array(strtolower(pathinfo($path, PATHINFO_EXTENSION)), ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'], true);
-    }
 }

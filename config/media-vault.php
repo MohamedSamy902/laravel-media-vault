@@ -28,7 +28,11 @@ return [
     ],
 
     'chunked' => [
-        'session_ttl_hours' => 24,
+        'session_ttl_hours' => env('MEDIA_VAULT_CHUNKED_TTL_HOURS', 24),
+        // Hard ceiling on declared chunk count per resumable session (DoS / memory guard).
+        'max_chunks' => env('MEDIA_VAULT_CHUNKED_MAX_CHUNKS', 10000),
+        // Absolute max declared total size for a resumable session (5 GB default).
+        'max_total_size' => env('MEDIA_VAULT_CHUNKED_MAX_TOTAL_SIZE', 5368709120),
     ],
 
     // =========================================================================

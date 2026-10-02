@@ -10,9 +10,11 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use MohamedSamy902\LaravelMediaVault\Contracts\QuotaManagerContract;
+use MohamedSamy902\LaravelMediaVault\Exceptions\QuotaExceededException;
 use MohamedSamy902\LaravelMediaVault\Models\UploadSession;
 use MohamedSamy902\LaravelMediaVault\Security\VirusScanner;
 use MohamedSamy902\LaravelMediaVault\Support\DiskListingCache;
+use MohamedSamy902\LaravelMediaVault\Support\FileCategories;
 use MohamedSamy902\LaravelMediaVault\ValueObjects\UploadResult;
 use RuntimeException;
 
@@ -50,7 +52,7 @@ final class ResumableUploadService
         array  $options = [],
     ): UploadSession {
         $this->ensureDatabaseEnabled();
-        $this->preValidateSession($originalName, $mimeType, $totalSize, $options);
+        $this->preValidateSession($originalName, $mimeType, $totalSize, $totalChunks, $options);
 
         $ttlHours = (int) config('media-vault.chunked.session_ttl_hours', 24);
 
@@ -471,11 +473,12 @@ final class ResumableUploadService
     }
 
     /**
-     * Pre-validates file extension, total size, and user quota before starting a session.
+     * Pre-validates chunk count, file extension, total size, and user quota before starting a session.
      *
      * @param string $originalName
      * @param string $mimeType
      * @param int    $totalSize
+     * @param int    $totalChunks
      * @param array<string, mixed> $options
      * @throws RuntimeException When pre-validation fails
      */
@@ -483,31 +486,50 @@ final class ResumableUploadService
         string $originalName,
         string $mimeType,
         int    $totalSize,
+        int    $totalChunks,
         array  $options = [],
     ): void {
-        // 1. Quota check if enabled
+        if ($totalChunks < 1) {
+            throw new RuntimeException('totalChunks must be at least 1.');
+        }
+
+        $maxChunks = (int) config('media-vault.chunked.max_chunks', 10000);
+        if ($maxChunks > 0 && $totalChunks > $maxChunks) {
+            throw new RuntimeException(
+                "totalChunks [{$totalChunks}] exceeds the configured maximum of {$maxChunks}."
+            );
+        }
+
+        if ($totalSize < 0) {
+            throw new RuntimeException('totalSize cannot be negative.');
+        }
+
+        $maxTotalSize = (int) config('media-vault.chunked.max_total_size', 5368709120);
+        if ($maxTotalSize > 0 && $totalSize > $maxTotalSize) {
+            $fileMb    = round($totalSize / 1048576, 2);
+            $allowedMb = round($maxTotalSize / 1048576, 2);
+            throw new RuntimeException(
+                "Declared file size ({$fileMb} MB) exceeds the chunked upload ceiling of {$allowedMb} MB."
+            );
+        }
+
+        // Quota check if enabled (serialized per-owner to reduce TOCTOU races).
         if (config('media-vault.quota.enabled', false)) {
             $userId = Auth::id();
-            if ($userId !== null && !$this->quotaManager->hasAvailableSpace((string) $userId, $totalSize)) {
-                $mbSize = round($totalSize / 1048576, 2);
-                throw new RuntimeException("Uploading this file ({$mbSize} MB) exceeds your remaining storage quota.");
+            if ($userId !== null) {
+                try {
+                    $this->quotaManager->check((int) $userId, $totalSize);
+                } catch (QuotaExceededException) {
+                    $mbSize = round($totalSize / 1048576, 2);
+                    throw new RuntimeException("Uploading this file ({$mbSize} MB) exceeds your remaining storage quota.");
+                }
             }
         }
 
-        // 2. Validate max size and extension against configured validation rules
+        // Validate max size and extension against configured validation rules
         $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
         $config = config('media-vault.validation', []);
-
-        $category = 'other';
-        if (in_array($ext, ['jpeg', 'png', 'jpg', 'gif', 'webp', 'svg'], true)) {
-            $category = 'image';
-        } elseif (in_array($ext, ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv'], true)) {
-            $category = 'video';
-        } elseif (in_array($ext, ['mp3', 'wav', 'ogg', 'm4a', 'flac'], true)) {
-            $category = 'audio';
-        } elseif (in_array($ext, ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'json', 'zip', 'rar', '7z'], true)) {
-            $category = 'document';
-        }
+        $category = FileCategories::categoryFromExtension($ext);
 
         /** @var string|array<mixed> $ruleVal */
         $ruleVal = $options['validation_rules']['file']
