@@ -17,7 +17,10 @@
         <div class="afu-progress-bar-inner" id="afu-progress-bar-inner"></div>
     </div>
     <div id="afu-status"></div>
-    <script>window.MEDIA_VAULT_UI_PREFIX = @json($uiPrefix);</script>
+    <script>
+        window.MEDIA_VAULT_UI_PREFIX = @json($uiPrefix);
+        window.MEDIA_VAULT_CHUNK_SIZE = @json((int) config('media-vault.chunking.default_chunk_size', 5242880));
+    </script>
     <script src="{{ asset('vendor/media-vault/media-vault.js') }}"></script>
 </body>
 </html>

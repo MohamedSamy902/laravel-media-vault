@@ -45,6 +45,10 @@ class AutoDiscoveryTest extends TestCase
 
     public function test_it_discovers_used_paths_from_columns_and_pivot_tables()
     {
+        config(['media-vault.thumbnails.sizes' => [
+            'small' => ['width' => 150, 'height' => 150],
+        ]]);
+
         // 1. Insert dummy data
         TestProduct::create(['image' => 'products/main.jpg']);
         TestProduct::create(['image' => 'products/secondary.jpg']);
@@ -63,12 +67,16 @@ class AutoDiscoveryTest extends TestCase
         $scanner = new FileUsageScanner($sourceManager);
         $usedPaths = iterator_to_array($scanner->getAllUsedPaths());
 
-        // 4. Assert
+        // 4. Assert — 4 originals + 4 small thumbs
         $this->assertCount(8, $usedPaths, 'Scanner should find exactly 8 used paths (including thumbnails)');
         $this->assertContains('products/main.jpg', $usedPaths);
         $this->assertContains('products/secondary.jpg', $usedPaths);
+        $this->assertContains('gallery/1.jpg', $usedPaths);
+        $this->assertContains('gallery/2.jpg', $usedPaths);
         $this->assertContains('products/thumb_small_main.jpg', $usedPaths);
         $this->assertContains('products/thumb_small_secondary.jpg', $usedPaths);
+        $this->assertContains('gallery/thumb_small_1.jpg', $usedPaths);
+        $this->assertContains('gallery/thumb_small_2.jpg', $usedPaths);
     }
 }
 

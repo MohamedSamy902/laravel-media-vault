@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use MohamedSamy902\LaravelMediaVault\Security\VirusScanner;
 
 /**
- * Registers and bootstraps the Advanced File Upload package services.
+ * Registers and bootstraps the Laravel Media Vault package services.
  *
  * All service bindings use the contract interfaces as keys so that
  * application code can override any implementation by rebinding the
@@ -75,6 +75,7 @@ class LaravelMediaVaultServiceProvider extends ServiceProvider
             $this->publishMigrations();
             $this->commands([
                 \MohamedSamy902\LaravelMediaVault\Console\Commands\PruneUnusedFiles::class,
+                \MohamedSamy902\LaravelMediaVault\Console\Commands\PruneTrashCommand::class,
                 \MohamedSamy902\LaravelMediaVault\Console\Commands\PruneExpiredSessions::class,
                 \MohamedSamy902\LaravelMediaVault\Console\Commands\ScanFilesCommand::class,
                 \MohamedSamy902\LaravelMediaVault\Console\Commands\DiscoverModelsCommand::class,

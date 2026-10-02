@@ -80,7 +80,7 @@ final class StorageManager
             );
 
             $databaseId = $this->maybeWriteRecord(
-                $originalName, $fileName, $fullPath, $disk, $mime, $fileSize, $thumbnailPaths, $config
+                $originalName, $fileName, $fullPath, $disk, $mime, $fileSize, $thumbnailPaths, $config, $options
             );
 
             $thumbnailUrls = [];
@@ -247,6 +247,33 @@ final class StorageManager
                 $diskStorage->putFileAs($dir, $file, basename($fullPath));
             }
         }
+
+        $this->maybeOptimizeImage($disk, $fullPath, $mime, $imageConfig);
+    }
+
+    /**
+     * Optionally run Spatie Image Optimizer when processing.image.optimize is true.
+     */
+    private function maybeOptimizeImage(string $disk, string $fullPath, string $mime, array $imageConfig): void
+    {
+        if (!($imageConfig['optimize'] ?? false)) {
+            return;
+        }
+
+        if (!str_starts_with($mime, 'image') || str_contains($mime, 'svg')) {
+            return;
+        }
+
+        if (!class_exists(\Spatie\ImageOptimizer\OptimizerChainFactory::class)) {
+            return;
+        }
+
+        try {
+            $absolute = Storage::disk($disk)->path($fullPath);
+            \Spatie\ImageOptimizer\OptimizerChainFactory::create()->optimize($absolute);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Media Vault image optimize skipped: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -366,8 +393,9 @@ final class StorageManager
      * @param string  $disk
      * @param string  $mime
      * @param int|null $size
-     * @param array<string, string> $thumbnails Map of generated thumbnail size => URL
+     * @param array<string, string> $thumbnails Map of generated thumbnail size => path
      * @param array<string, mixed> $config
+     * @param array<string, mixed> $options Upload options (model_type, model_id, is_used, user_id, …)
      * @return int|null The ID of the created record, or null when DB is disabled
      */
     private function maybeWriteRecord(
@@ -379,6 +407,7 @@ final class StorageManager
         ?int    $size,
         array   $thumbnails,
         array   $config,
+        array   $options = [],
     ): ?int {
         if (!($config['database']['enabled'] ?? false)) {
             return null;
@@ -386,10 +415,12 @@ final class StorageManager
 
         $model = $config['database']['model'];
 
-        // ✅ Wrap in transaction: if DB insert fails, the caller's catch block
-        // will rollback the already-written physical file and thumbnails.
+        $isUsed = array_key_exists('is_used', $options)
+            ? (bool) $options['is_used']
+            : (!empty($options['model_type']) && !empty($options['model_id']));
+
         $record = \Illuminate\Support\Facades\DB::transaction(
-            static function () use ($model, $originalName, $fileName, $fullPath, $disk, $mime, $size, $thumbnails) {
+            static function () use ($model, $originalName, $fileName, $fullPath, $disk, $mime, $size, $thumbnails, $options, $isUsed) {
                 $modelInstance = new $model();
                 $modelInstance->forceFill([
                     'original_name' => $originalName,
@@ -399,8 +430,10 @@ final class StorageManager
                     'mime_type'     => $mime,
                     'size'          => $size,
                     'type'          => (new \MohamedSamy902\LaravelMediaVault\Services\MimeTypeResolver())->toFileType($mime),
-                    'user_id'       => Auth::id(),
-                    'is_used'       => false,
+                    'user_id'       => $options['user_id'] ?? Auth::id(),
+                    'model_type'    => $options['model_type'] ?? null,
+                    'model_id'      => $options['model_id'] ?? null,
+                    'is_used'       => $isUsed,
                     'metadata'      => empty($thumbnails) ? null : ['thumbnails' => $thumbnails],
                 ]);
                 $modelInstance->save();

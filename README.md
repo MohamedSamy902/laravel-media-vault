@@ -106,13 +106,10 @@ Contains standard Laravel validation strings mapped to file types (`image`, `vid
 ### URL Upload / Download (`url_download` & `url_upload`)
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `url_download.enabled` | boolean | `true` | Allow uploading files via a remote URL. |
-| `url_download.chunked` | boolean | `true` | True = load into memory; False = stream to disk directly. |
-| `url_download.chunk_size` | int | `5242880` | Size of streaming chunks (5MB). |
-| `url_download.allowed_mimes`| array | `[...]` | Whitelisted extensions for URL downloads grouped by type. |
+| `url_download.allowed_mimes`| array | `[...]` | Whitelisted MIME subtypes for URL downloads grouped by type. |
 | `url_upload.allowed_domains`| array | `[]` | Allowed domains for SSRF protection (empty = allow all public). |
-| `url_upload.timeout_seconds`| int | `10` | Hard timeout for the download HTTP request (overrides legacy `url_download.timeout`). |
-| `url_upload.max_size_bytes` | int | `52428800`| Max file size allowed from a URL (50MB default) (overrides legacy `url_download.max_size`). |
+| `url_upload.timeout_seconds`| int | `10` | Hard timeout for the download HTTP request. |
+| `url_upload.max_size_bytes` | int | `52428800`| Max file size allowed from a URL (50MB default). |
 
 ### Image Processing (`image_driver` & `processing`)
 | Key | Type | Default | Description |
@@ -125,18 +122,15 @@ Contains standard Laravel validation strings mapped to file types (`image`, `vid
 | `processing.image.convert_to`| string\|null | `'webp'`| Global format conversion target (e.g. `webp`, `jpg`). |
 | `processing.image.quality` | int | `85` | Compression quality (1-100). |
 | `processing.image.optimize` | boolean | `false` | Optional integration for Spatie image optimizer. |
-| `processing.video.enabled` | boolean | `false` | Enable video processing features. |
-| `processing.video.convert_to`| string | `'mp4'` | Target video format. |
-| `processing.video.bitrate` | string | `'1000k'` | Target video bitrate. |
-| `processing.video.resolution`| string | `'1280x720'`| Target video resolution. |
+| `processing.video.*` | — | disabled | Reserved for optional FFmpeg drivers (not implemented in core). |
 
 ### Thumbnails (`thumbnails`)
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `thumbnails.enabled` | boolean | `true` | Automatically generate thumbnails during image upload. |
 | `thumbnails.sizes` | array | `[...]` | Associative array of sizes (e.g. `small => ['width' => 150, 'crop' => true]`). |
-| `thumbnails.for_videos` | boolean | `false` | Generate thumbnails for video files (requires FFmpeg). |
-| `thumbnails.seconds` | int | `5` | Second to capture for video thumbnails. |
+| `thumbnails.for_videos` | boolean | `false` | Reserved for optional FFmpeg video frame capture (not in core). |
+| `thumbnails.seconds` | int | `5` | Capture offset reserved for future FFmpeg driver. |
 
 ### Quota Management (`quota`)
 | Key | Type | Default | Description |
@@ -144,8 +138,7 @@ Contains standard Laravel validation strings mapped to file types (`image`, `vid
 | `quota.enabled` | boolean | `false` | Enable storage quotas per user. |
 | `quota.max_size_per_user` | int | `1073741824`| 1 GB default max size. |
 | `quota.key_column` | string | `'user_id'` | DB column to identify owner. Change to `tenant_id` for multi-tenant. |
-| `quota.warning_threshold` | float | `0.9` | Fraction (e.g. 0.9 = 90%) to trigger `QuotaWarning` event. |
-| `quota.check_method` | string | `'database'`| Method for checking quota (`database` or `session`). |
+| `quota.warning_threshold` | float | `0.9` | Fraction (e.g. 0.9 = 90%) to trigger `QuotaWarning` during upload checks. |
 
 ### Multi-Source & DB Tracking (`media_models`, `database`)
 | Key | Type | Default | Description |
@@ -155,7 +148,7 @@ Contains standard Laravel validation strings mapped to file types (`image`, `vid
 | `database.enabled` | boolean | `true` | Track uploads in the `file_uploads` table. |
 | `database.model` | string | `FileUpload::class` | Class reference for the database model. |
 | `database.table` | string | `'file_uploads'`| Database table name. |
-| `database.prune_after` | int\|null| `30` | Days to retain soft-deleted/unused records before physical prune. |
+| `database.prune_after` | int\|null| `30` | Days unused (`is_used=false`) before `media-vault:prune-unused` may delete. |
 
 ### Security & Chunks (`security`, `chunked`)
 | Key | Type | Default | Description |
@@ -166,26 +159,28 @@ Contains standard Laravel validation strings mapped to file types (`image`, `vid
 | `security.rate_limit.max_uploads`| int | `60` | Max uploads per time window. |
 | `security.rate_limit.per_minutes`| int | `1` | Time window in minutes. |
 | `security.virus_scan.enabled`| boolean | `false` | Enable ClamAV virus scanning. |
-| `security.virus_scan.driver`| string | `'clamav'`| Virus scanning driver. |
-| `security.virus_scan.path`| string | `'/usr/bin/clamscan'`| Path to the ClamAV executable. |
+| `security.virus_scan.path`| string | `'/usr/bin/clamscan'`| Path to the ClamAV CLI executable. |
+| `security.virus_scan.socket`| string | `'tcp://127.0.0.1:3310'` | ClamAV daemon socket (`tcp://` or `unix://`). |
+| `security.virus_scan.fail_mode`| string | `'closed'` | `closed` rejects uploads when scanner is down; `open` allows them. |
 | `chunked.session_ttl_hours` | int | `24` | Hours to keep pending resumable upload sessions before expiration. |
+| `chunking.default_chunk_size` | int | `5242880` | Default JS client chunk size when `chunkSize` is omitted. |
 
-### Advanced Features (`temp_url`, `compression`, `logging`)
+### Temporary URLs & image quality (`temp_url`, `compression`)
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| `temp_url.enabled` | boolean | `true` | Enable signed local route fallback when disk has no `temporaryUrl()`. |
 | `temp_url.route_prefix` | string | `'media-vault-urls'`| Prefix for temporary signed URL routes. |
-| `temp_url.middleware` | array | `[]` | Middleware for temporary signed URLs. |
-| `compression.enabled` | boolean | `false` | Enable file compression (e.g., zip) before storage. |
-| `compression.types` | array | `[...]` | File extensions eligible for compression. |
-| `compression.quality` | int | `80` | Compression quality level. |
-| `logging.enabled` | boolean | `true` | Enable internal operation logging. |
-| `logging.level` | string | `'info'` | The log level to use. |
+| `temp_url.route_name` | string | `'media-vault.temp'` | Named route used by `MediaVault::temporaryUrl()`. |
+| `temp_url.middleware` | array | `['web']` | Middleware for temporary signed URLs. |
+| `compression.enabled` | boolean | `false` | When true, overrides image encode quality (not zip/document compression). |
+| `compression.quality` | int | `80` | Image encode quality override when compression is enabled. |
 
 ### UI Dashboard (`ui`)
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `ui.route_prefix` | string | `'media-vault'`| Base URL for the Media Manager Dashboard. |
-| `ui.middleware` | array | `['web']` | **CRITICAL:** Add `'auth'` to protect the dashboard! |
+| `ui.require_auth` | boolean | `false` | When true, appends the `auth` middleware to dashboard routes. |
+| `ui.middleware` | array | `['web']` | Middleware stack for the dashboard (add `'auth'` or enable `require_auth`). |
 
 ---
 
@@ -424,20 +419,14 @@ class User extends Model {
 ```php
 use MohamedSamy902\LaravelMediaVault\Facades\MediaVault;
 
-// Upload file
+// Upload stays unused until attached
 $result = MediaVault::upload($request, ['field_name' => 'avatar']);
 
-// Link to model polymorphically
 $user = User::find(1);
-$user->uploads()->create([
-    'path'          => $result->path,
-    'disk'          => $result->disk,
-    'original_name' => $result->original_name,
-    'mime_type'     => $result->mime_type,
-    'size'          => $result->size,
-    'type'          => 'image',
-    'metadata'      => ['thumbnails' => $result->toArray()['thumbnail_urls'] ?? []],
-]);
+$user->attachUpload($result->id); // sets model_type/id + is_used=true
+
+// Or mark usage without morph ownership:
+MediaVault::markAsUsed($result->id);
 ```
 
 **4. Retrieving URLs & Thumbnails:**
@@ -656,8 +645,10 @@ The package registers several utilities to simplify file management:
 - `php artisan media-vault:discover-models` — Scans the `app/Models` directory for `HasMediaFields` usage and caches them.
 - `php artisan media-vault:regenerate-thumbnails {--force}` — Iterates over the `file_uploads` table and regenerates missing sizes based on config.
 - `php artisan media-vault:import-orphans {disk?}` — Scans a physical disk and imports untracked files into the `file_uploads` table to prevent them from being considered orphans.
-- `php artisan media-vault:prune-unused {--days=30} {--force} {--dry-run}` — Irreversibly deletes files that have been marked as unused for `N` days.
+- `php artisan media-vault:prune-unused {--days=} {--force} {--dry-run}` — Permanently deletes unused (`is_used=false`) uploads older than `database.prune_after` (or `--days`).
+- `php artisan media-vault:prune-trash {--days=30} {--force} {--dry-run}` — Permanently deletes soft-trashed uploads older than N days.
 - `php artisan media-vault:prune-sessions` — Removes expired `UploadSession` records and their physical incomplete temporary chunks.
+- `php artisan media-vault:scan` — Scans for orphaned disk files (also available via `ScanOrphansJob`).
 
 ---
 
@@ -706,26 +697,32 @@ The package includes built-in automated virus and malware scanning via ClamAV be
 // config/media-vault.php
 'security' => [
     'virus_scan' => [
-        'enabled' => env('FILE_UPLOAD_VIRUS_SCAN', false),
-        'driver'  => 'clamav',
-        'path'    => env('CLAMSCAN_PATH', '/usr/bin/clamscan'),
+        'enabled'   => env('MEDIA_VAULT_VIRUS_SCAN', false),
+        'path'      => env('CLAMSCAN_PATH', '/usr/bin/clamscan'),
+        'socket'    => env('CLAMD_SOCKET', 'tcp://127.0.0.1:3310'),
+        'fail_mode' => env('CLAMAV_FAIL_MODE', 'closed'), // closed | open
     ],
 ],
 ```
 
-### ⚡ File & Image Compression
-Pipeline-integrated file compression reduces storage footprint for non-image document formats.
-
-- **Scope:** Document formats (`pdf`, `doc`, `docx`, `xls`, `xlsx`, `ppt`, `pptx`).
-- **Execution:** Runs directly inside the `StorageManager` write pipeline using quality parameters based on `compression.quality`.
+### ⚡ Image Quality Override (`compression`)
+When enabled, `compression.quality` overrides image encode quality in the write pipeline. This is **not** document/PDF compression.
 
 ```php
 // config/media-vault.php
 'compression' => [
-    'enabled' => env('FILE_UPLOAD_COMPRESSION_ENABLED', false),
-    'quality' => env('FILE_UPLOAD_COMPRESSION_QUALITY', 80), // 1 - 100 quality percentage
-    'types'   => ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'],
+    'enabled' => false,
+    'quality' => 80, // 1–100 image quality override
 ],
+```
+
+### Temporary URLs
+```php
+use MohamedSamy902\LaravelMediaVault\Facades\MediaVault;
+
+// Uses Storage::temporaryUrl() when the disk supports it (e.g. S3).
+// Falls back to a signed local route under media-vault.temp_url.
+$url = MediaVault::temporaryUrl('uploads/file.jpg', now()->addMinutes(10));
 ```
 
 ### ⏱️ Dual-Layer Rate Limiting
@@ -737,12 +734,12 @@ The package distinguishes between two distinct rate limiting safeguards:
    // config/media-vault.php
    'security' => [
        'rate_limit' => [
-           'enabled'     => env('FILE_UPLOAD_RATE_LIMIT_ENABLED', true),
+           'enabled'     => env('MEDIA_VAULT_RATE_LIMIT_ENABLED', true),
            'max_uploads' => 60,
            'per_minutes' => 1,
        ],
    ],
-   ```
+```
    When exceeded, endpoints return `HTTP 429 Too Many Requests` with `{ "status": false, "message": "Too Many Requests. Rate limit exceeded for file operations." }`.
 
 2. **External Remote URL Throttling (`UrlDownloader`):**

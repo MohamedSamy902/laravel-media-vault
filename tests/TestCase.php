@@ -15,7 +15,7 @@ use MohamedSamy902\LaravelMediaVault\Services\UrlDownloader;
 use MohamedSamy902\LaravelMediaVault\Contracts\QuotaManagerContract;
 
 /**
- * Base test case for the Advanced File Upload package.
+ * Base test case for the Laravel Media Vault package.
  *
  * Provides two factory methods for building a MediaVaultService:
  *
@@ -42,6 +42,7 @@ abstract class TestCase extends BaseTestCase
         $app['config']->set('media-vault.database.enabled', false);
         $app['config']->set('media-vault.quota.enabled', false);
         $app['config']->set('media-vault.security.rate_limit.enabled', false);
+        $app['config']->set('media-vault.security.strict_mime_validation', false);
         
         $app['config']->set('app.key', 'base64:JbH1T8/s+cZqKqP7wW9/VbYt9E6mJtKqQ5yQ4oH0Ycw=');
     }

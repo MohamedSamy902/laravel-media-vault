@@ -1,5 +1,5 @@
 /**
- * Advanced File Upload JS Client
+ * Laravel Media Vault JS Client
  *
  * Provides resumable chunked file transfers, concurrent multi-file upload support,
  * localStorage state persistence per file, and auto-detection of interrupted uploads on page load.
@@ -80,7 +80,10 @@ document.addEventListener('DOMContentLoaded', function () {
         constructor(file, options = {}) {
             this.file = file;
             this.options = options;
-            this.chunkSize = options.chunkSize || 5 * 1024 * 1024; // 5MB default
+            const configuredChunk = (typeof window !== 'undefined' && window.MEDIA_VAULT_CHUNK_SIZE)
+                ? Number(window.MEDIA_VAULT_CHUNK_SIZE)
+                : null;
+            this.chunkSize = options.chunkSize || configuredChunk || 5 * 1024 * 1024; // 5MB default
             this.totalChunks = Math.ceil(file.size / this.chunkSize);
             this.fingerprint = getFileFingerprint(file);
             this.sessionId = null;

@@ -58,4 +58,21 @@ interface MediaVaultContract
      * @return array<string,mixed>|array<int,array<string,mixed>>
      */
     public function delete(int|string|array $idOrPath): array;
+
+    /**
+     * Mark upload record(s) as used. Optionally bind a polymorphic owner.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @param object|null $owner Eloquent model instance (optional)
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    public function markAsUsed(int|string|array $idOrPath, ?object $owner = null): array;
+
+    /**
+     * Mark upload record(s) as unused and optionally clear ownership.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    public function markAsUnused(int|string|array $idOrPath, bool $clearOwnership = true): array;
 }

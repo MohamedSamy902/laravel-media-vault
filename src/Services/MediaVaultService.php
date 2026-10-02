@@ -146,6 +146,91 @@ class MediaVaultService implements MediaVaultContract
     }
 
     /**
+     * Mark upload record(s) as used. Optionally bind a polymorphic owner.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @param object|null $owner
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    #[\Override]
+    public function markAsUsed(int|string|array $idOrPath, ?object $owner = null): array
+    {
+        return $this->mutateMany($idOrPath, function (int|string $item) use ($owner) {
+            $record = $this->findUploadRecord($item);
+            if (!$record) {
+                return ['status' => false, 'message' => "Upload [{$item}] was not found."];
+            }
+
+            $payload = ['is_used' => true];
+            if ($owner instanceof \Illuminate\Database\Eloquent\Model) {
+                $payload['model_type'] = $owner->getMorphClass();
+                $payload['model_id'] = $owner->getKey();
+            }
+
+            $record->forceFill($payload)->save();
+
+            return ['status' => true, 'message' => 'Marked as used.', 'id' => $record->id, 'path' => $record->path];
+        });
+    }
+
+    /**
+     * Mark upload record(s) as unused.
+     *
+     * @param int|string|array<int, int|string> $idOrPath
+     * @return array<string, mixed>|array<int, array<string, mixed>>
+     */
+    #[\Override]
+    public function markAsUnused(int|string|array $idOrPath, bool $clearOwnership = true): array
+    {
+        return $this->mutateMany($idOrPath, function (int|string $item) use ($clearOwnership) {
+            $record = $this->findUploadRecord($item);
+            if (!$record) {
+                return ['status' => false, 'message' => "Upload [{$item}] was not found."];
+            }
+
+            $payload = ['is_used' => false];
+            if ($clearOwnership) {
+                $payload['model_type'] = null;
+                $payload['model_id'] = null;
+            }
+
+            $record->forceFill($payload)->save();
+
+            return ['status' => true, 'message' => 'Marked as unused.', 'id' => $record->id, 'path' => $record->path];
+        });
+    }
+
+    /**
+     * Resolve a temporary URL for a stored path (disk temporaryUrl or signed local route).
+     */
+    public function temporaryUrl(
+        string $path,
+        \DateTimeInterface|\DateInterval|int $expiration = 60,
+        ?string $disk = null,
+    ): ?string {
+        return app(\MohamedSamy902\LaravelMediaVault\Support\TemporaryUrl::class)
+            ->for($path, $expiration, $disk);
+    }
+
+    /**
+     * @param int|string $idOrPath
+     */
+    private function findUploadRecord(int|string $idOrPath): ?\MohamedSamy902\LaravelMediaVault\Models\FileUpload
+    {
+        if (!config('media-vault.database.enabled', false)) {
+            return null;
+        }
+
+        $modelClass = config('media-vault.database.model', \MohamedSamy902\LaravelMediaVault\Models\FileUpload::class);
+
+        if (is_int($idOrPath) || ctype_digit((string) $idOrPath)) {
+            return $modelClass::query()->find((int) $idOrPath);
+        }
+
+        return $modelClass::query()->where('path', $idOrPath)->first();
+    }
+
+    /**
      * @param int|string|array<int, int|string> $idOrPath
      * @param callable(int|string): array<string, mixed> $callback
      * @return array<string, mixed>|array<int, array<string, mixed>>

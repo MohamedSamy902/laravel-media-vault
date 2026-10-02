@@ -40,6 +40,10 @@ class CustomMediaSource implements MediaSourceContract
             $escapedSearch = $search ? str_replace('/', '\\/', (string) $search) : null;
             
             foreach ($this->fieldsDefinition as $field => $config) {
+                if ($field === 'tables') {
+                    continue;
+                }
+
                 $q->orWhere(function ($subQ) use ($field, $search, $escapedSearch) {
                     $subQ->whereNotNull($field)->where($field, '!=', '');
                     if ($search) {
@@ -63,6 +67,10 @@ class CustomMediaSource implements MediaSourceContract
         $allFiles = collect();
         foreach ($paginator->items() as $model) {
             foreach ($this->fieldsDefinition as $field => $config) {
+                if ($field === 'tables') {
+                    continue;
+                }
+
                 $path = $model->getAttribute($field);
                 if (!$path) continue;
 
@@ -107,36 +115,91 @@ class CustomMediaSource implements MediaSourceContract
         
         foreach ($query->cursor() as $model) {
             foreach ($this->fieldsDefinition as $field => $config) {
+                // Nested pivot/table definitions are handled separately.
+                if ($field === 'tables') {
+                    continue;
+                }
+
                 $path = $model->getAttribute($field);
                 if (!$path) continue;
                 
-                $isMultiple = $config['multiple'] ?? false;
+                $isMultiple = is_array($config) ? ($config['multiple'] ?? false) : false;
                 $paths = $isMultiple ? (is_string($path) ? json_decode($path, true) : $path) : [$path];
 
                 if (!is_array($paths)) continue;
 
                 foreach ($paths as $p) {
-                    yield (string) $p;
-
-                    // Data Loss Protection: Custom models do not store thumbnail paths.
-                    // We must dynamically yield potential thumbnails based on config
-                    // so they aren't incorrectly flagged as orphaned and deleted.
-                    $ext = strtolower(pathinfo((string)$p, PATHINFO_EXTENSION));
-                    if (in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif'])) {
-                        $thumbnailsConfig = config('media-vault.thumbnails.sizes', []);
-                        if (!empty($thumbnailsConfig)) {
-                            $dir = dirname((string) $p);
-                            $dir = $dir === '.' ? '' : $dir . '/';
-                            $fileName = basename((string) $p);
-                            $baseName = pathinfo($fileName, PATHINFO_FILENAME);
-                            
-                            foreach (array_keys($thumbnailsConfig) as $sizeName) {
-                                yield "{$dir}thumb_{$sizeName}_{$baseName}.{$ext}";
-                            }
-                        }
-                    }
+                    yield from $this->yieldPathWithThumbnails((string) $p);
                 }
             }
+        }
+
+        yield from $this->yieldPivotTablePaths();
+    }
+
+    /**
+     * Yield paths stored in related/pivot tables declared under uploadableFiles()['tables'].
+     *
+     * @return \Generator<int, string>
+     */
+    private function yieldPivotTablePaths(): \Generator
+    {
+        $tables = $this->fieldsDefinition['tables'] ?? null;
+        if (!is_array($tables) || $tables === []) {
+            return;
+        }
+
+        foreach ($tables as $tableName => $columns) {
+            if (!is_array($columns)) {
+                continue;
+            }
+
+            foreach (array_keys($columns) as $column) {
+                if (!is_string($column) || $column === '') {
+                    continue;
+                }
+
+                try {
+                    $rows = \Illuminate\Support\Facades\DB::table($tableName)->select($column)->cursor();
+                } catch (\Throwable) {
+                    continue;
+                }
+
+                foreach ($rows as $row) {
+                    $value = $row->{$column} ?? null;
+                    if (!$value) {
+                        continue;
+                    }
+                    yield from $this->yieldPathWithThumbnails((string) $value);
+                }
+            }
+        }
+    }
+
+    /**
+     * @return \Generator<int, string>
+     */
+    private function yieldPathWithThumbnails(string $path): \Generator
+    {
+        yield $path;
+
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        if (!in_array($ext, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'avif'], true)) {
+            return;
+        }
+
+        $thumbnailsConfig = config('media-vault.thumbnails.sizes', []);
+        if (empty($thumbnailsConfig)) {
+            return;
+        }
+
+        $dir = dirname($path);
+        $dir = $dir === '.' ? '' : $dir . '/';
+        $fileName = basename($path);
+        $baseName = pathinfo($fileName, PATHINFO_FILENAME);
+
+        foreach (array_keys($thumbnailsConfig) as $sizeName) {
+            yield "{$dir}thumb_{$sizeName}_{$baseName}.{$ext}";
         }
     }
 

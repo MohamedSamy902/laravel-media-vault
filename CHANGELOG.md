@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- Unified trash / restore / hard-delete lifecycle with structured `.trash/` paths.
+- Dashboard stability: dynamic route prefix, bulk restore, scan status polling, thumbnail listing filters, optional `ui.require_auth`.
+- Usage tracking helpers: `HasUploads::attachUpload()` / `detachUpload()`, `MediaVault::markAsUsed()` / `markAsUnused()`.
+- Safer pruning: `media-vault:prune-unused` respects `database.prune_after`; new `media-vault:prune-trash`.
+- Queue jobs: `ScanOrphansJob`, `RegenerateThumbnailsJob`, `PruneTrashJob`.
+- `MediaVault::temporaryUrl()` helper over Laravel disk temporary URLs / signed local routes.
+- `QuotaWarning` event; strict MIME magic-byte validation; ClamAV `socket` / `fail_mode` in published config.
+- Pivot/`tables` path discovery in `CustomMediaSource`.
+
+### Changed
+- PHP requirement raised to `^8.2`.
+- Config hygiene: removed dead `logging` / legacy URL-download toggles; clarified compression as image quality override.
+- CI consolidated into a single workflow matrix (Laravel 10–13, PHP 8.2–8.4).
+- Branding updated from “Advanced File Upload” to Laravel Media Vault.
+
 ## [v1.1.2] - 2026-09-07
 
 ### Fixed

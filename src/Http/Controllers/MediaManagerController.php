@@ -299,7 +299,7 @@ declare(strict_types=1);
                 'started_at' => now()->toIso8601String(),
             ], 3600);
 
-            \Illuminate\Support\Facades\Artisan::queue('media-vault:scan');
+            \MohamedSamy902\LaravelMediaVault\Jobs\ScanOrphansJob::dispatch();
             
             return response()->json([
                 'status' => true,

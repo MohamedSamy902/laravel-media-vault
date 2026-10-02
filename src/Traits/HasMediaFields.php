@@ -81,6 +81,21 @@ trait HasMediaFields
             }
         }
 
-        return Storage::disk($disk)->url($path);
+        $url = Storage::disk($disk)->url($path);
+
+        return $this->applyCdnUrl($url, (string) $path);
+    }
+
+    /**
+     * Apply CDN rewrite when enabled (same rules as StorageManager).
+     */
+    protected function applyCdnUrl(string $url, string $path): string
+    {
+        $cdn = config('media-vault.storage.cdn', []);
+        if (!($cdn['enabled'] ?? false) || empty($cdn['url'])) {
+            return $url;
+        }
+
+        return rtrim((string) $cdn['url'], '/') . '/' . ltrim($path, '/');
     }
 }

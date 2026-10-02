@@ -19,6 +19,17 @@ final class QuotaManager implements QuotaManagerContract
     {
         $info = $this->usage($userId);
 
+        $projected = $info->limit > 0 ? ($info->used + $bytes) / $info->limit : 0.0;
+        $threshold = (float) (config('media-vault.quota.warning_threshold') ?? 0.9);
+        if ($info->limit > 0 && $projected >= $threshold && ($info->used + $bytes) <= $info->limit) {
+            \MohamedSamy902\LaravelMediaVault\Events\QuotaWarning::dispatch(
+                $userId,
+                $info->used + $bytes,
+                $info->limit,
+                round($projected, 4),
+            );
+        }
+
         if (($info->used + $bytes) > $info->limit) {
             $maxMB = round($info->limit / (1024 * 1024), 2);
             throw new QuotaExceededException(

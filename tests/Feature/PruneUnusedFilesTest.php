@@ -92,4 +92,28 @@ class PruneUnusedFilesTest extends TestCase
             ->expectsOutputToContain('Pruning is disabled')
             ->assertExitCode(0);
     }
+
+    public function test_prune_trash_dry_run_lists_old_trashed_records(): void
+    {
+        Carbon::setTestNow('2026-01-15 12:00:00');
+
+        $trashed = FileUpload::create([
+            'name' => 'gone',
+            'path' => 'uploads/.trash/gone.jpg',
+            'original_name' => 'gone.jpg',
+            'disk' => 'public',
+            'mime_type' => 'image/jpeg',
+            'type' => 'image',
+            'size' => 10,
+            'is_used' => false,
+        ]);
+        $trashed->delete();
+        $trashed->forceFill(['deleted_at' => now()->subDays(45)])->save();
+
+        $this->artisan('media-vault:prune-trash', ['--days' => 30, '--dry-run' => true])
+            ->expectsOutputToContain('[DRY RUN] Found 1 trashed files')
+            ->assertExitCode(0);
+
+        Carbon::setTestNow();
+    }
 }

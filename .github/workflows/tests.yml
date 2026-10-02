@@ -2,9 +2,9 @@ name: Tests
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 jobs:
   test:
@@ -17,7 +17,6 @@ jobs:
         php:     ['8.2', '8.3', '8.4']
         laravel: ['10.*', '11.*', '12.*', '13.*']
         exclude:
-          # Laravel 13 requires PHP 8.3+
           - php: '8.2'
             laravel: '13.*'
 
@@ -29,7 +28,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: gd, mbstring, xml, json, intl
+          extensions: gd, mbstring, xml, json, intl, fileinfo
           coverage: xdebug
 
       - name: Resolve testbench version
@@ -54,6 +53,10 @@ jobs:
 
       - name: Run tests
         run: vendor/bin/phpunit --colors=always
+
+      - name: Static analysis
+        if: matrix.php == '8.3' && matrix.laravel == '12.*'
+        run: vendor/bin/phpstan analyse src --level=6
 
       - name: Upload coverage
         if: matrix.php == '8.3' && matrix.laravel == '12.*'

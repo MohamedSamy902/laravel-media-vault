@@ -36,3 +36,15 @@ Route::prefix($prefix)
         Route::post('/scan',                           [MediaManagerController::class, 'scan'])->name('scan');
         Route::get('/scan/status',                     [MediaManagerController::class, 'scanStatus'])->name('scan.status');
     });
+
+$tempPrefix = trim((string) config('media-vault.temp_url.route_prefix', 'media-vault-urls'), '/');
+$tempMiddleware = config('media-vault.temp_url.middleware', ['web']);
+
+if (config('media-vault.temp_url.enabled', true)) {
+    Route::prefix($tempPrefix)
+        ->middleware($tempMiddleware)
+        ->group(function () {
+            Route::get('/file', \MohamedSamy902\LaravelMediaVault\Http\Controllers\TemporaryUrlController::class)
+                ->name('media-vault.temp');
+        });
+}

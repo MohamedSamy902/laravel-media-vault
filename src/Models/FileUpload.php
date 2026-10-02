@@ -38,8 +38,6 @@ class FileUpload extends Model
 {
     use SoftDeletes;
 
-    protected $table = 'file_uploads';
-
     protected $fillable = [
         'original_name',
         'name',
@@ -54,6 +52,43 @@ class FileUpload extends Model
         'is_used',
         'metadata',
     ];
+
+    public function getTable(): string
+    {
+        return (string) config('media-vault.database.table', 'file_uploads');
+    }
+
+    /**
+     * Mark this upload as used and optionally bind an owner.
+     */
+    public function markAsUsed(?\Illuminate\Database\Eloquent\Model $owner = null): self
+    {
+        $payload = ['is_used' => true];
+        if ($owner) {
+            $payload['model_type'] = $owner->getMorphClass();
+            $payload['model_id'] = $owner->getKey();
+        }
+
+        $this->forceFill($payload)->save();
+
+        return $this;
+    }
+
+    /**
+     * Mark this upload as unused.
+     */
+    public function markAsUnused(bool $clearOwnership = true): self
+    {
+        $payload = ['is_used' => false];
+        if ($clearOwnership) {
+            $payload['model_type'] = null;
+            $payload['model_id'] = null;
+        }
+
+        $this->forceFill($payload)->save();
+
+        return $this;
+    }
 
     /**
      * @var array<string, string>
